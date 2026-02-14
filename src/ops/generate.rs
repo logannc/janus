@@ -28,31 +28,10 @@ fn load_vars(dotfiles_dir: &Path, var_files: &[String]) -> Result<HashMap<String
 fn vars_to_tera_context(vars: &HashMap<String, toml::Value>) -> Result<tera::Context> {
     let mut context = tera::Context::new();
     for (key, value) in vars {
-        let json_value = toml_value_to_json(value);
-        context.insert(key, &json_value);
+        context.insert(key, value);
     }
     trace!("Tera context: {:?}", context);
     Ok(context)
-}
-
-fn toml_value_to_json(value: &toml::Value) -> serde_json::Value {
-    match value {
-        toml::Value::String(s) => serde_json::Value::String(s.clone()),
-        toml::Value::Integer(i) => serde_json::json!(i),
-        toml::Value::Float(f) => serde_json::json!(f),
-        toml::Value::Boolean(b) => serde_json::Value::Bool(*b),
-        toml::Value::Datetime(dt) => serde_json::Value::String(dt.to_string()),
-        toml::Value::Array(arr) => {
-            serde_json::Value::Array(arr.iter().map(toml_value_to_json).collect())
-        }
-        toml::Value::Table(table) => {
-            let map = table
-                .iter()
-                .map(|(k, v)| (k.clone(), toml_value_to_json(v)))
-                .collect();
-            serde_json::Value::Object(map)
-        }
-    }
 }
 
 pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<()> {
