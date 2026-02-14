@@ -49,7 +49,7 @@ pub fn run(
         let target_str = collapse_tilde(file_path);
 
         // Check if already managed
-        if config.files.iter().any(|f| expand_tilde(&f.target) == *file_path) {
+        if config.files.iter().any(|f| expand_tilde(&f.target()) == *file_path) {
             debug!("Already managed, skipping: {}", target_str);
             continue;
         }
@@ -143,9 +143,9 @@ fn import_file(
     let config = crate::config::Config::load(config_path)?;
     let file_patterns = vec![dest_relative.clone()];
 
-    crate::ops::generate::run(&config, &file_patterns, false)?;
-    crate::ops::stage::run(&config, &file_patterns, false)?;
-    crate::ops::deploy::run(&config, &file_patterns, false, false)?;
+    crate::ops::generate::run(&config, Some(&file_patterns), false)?;
+    crate::ops::stage::run(&config, Some(&file_patterns), false)?;
+    crate::ops::deploy::run(&config, Some(&file_patterns), false, false)?;
 
     state.add_deployed(dest_relative.clone(), target_str.to_string());
     info!("Imported {}", target_str);

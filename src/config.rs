@@ -16,11 +16,20 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FileEntry {
     pub src: String,
-    pub target: String,
+    pub target: Option<String>,
     #[serde(default = "default_true")]
     pub template: bool,
     #[serde(default)]
     pub vars: Vec<String>,
+}
+
+impl FileEntry {
+    /// Return the target path string, defaulting to `~/.config/{src}` when unset.
+    pub fn target(&self) -> String {
+        self.target
+            .clone()
+            .unwrap_or_else(|| format!("~/.config/{}", self.src))
+    }
 }
 
 fn default_true() -> bool {
@@ -60,11 +69,11 @@ impl Config {
     }
 
     /// Filter file entries by the given file/glob patterns.
-    /// If patterns is empty, return all entries.
-    pub fn filter_files(&self, patterns: &[String]) -> Vec<&FileEntry> {
-        if patterns.is_empty() {
+    /// `None` means all entries; `Some` filters to matching entries.
+    pub fn filter_files(&self, patterns: Option<&[String]>) -> Vec<&FileEntry> {
+        let Some(patterns) = patterns else {
             return self.files.iter().collect();
-        }
+        };
         self.files
             .iter()
             .filter(|entry| {

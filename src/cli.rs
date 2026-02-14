@@ -31,20 +31,32 @@ pub enum Command {
 
     /// Render templates into .generated/
     Generate {
-        /// Files/globs to generate (default: all)
+        /// Files/globs to generate
         files: Vec<String>,
+
+        /// Process all configured files
+        #[arg(long)]
+        all: bool,
     },
 
     /// Copy generated files into .staged/
     Stage {
-        /// Files/globs to stage (default: all)
+        /// Files/globs to stage
         files: Vec<String>,
+
+        /// Process all configured files
+        #[arg(long)]
+        all: bool,
     },
 
     /// Symlink staged files to their target locations
     Deploy {
-        /// Files/globs to deploy (default: all)
+        /// Files/globs to deploy
         files: Vec<String>,
+
+        /// Process all configured files
+        #[arg(long)]
+        all: bool,
 
         /// Overwrite existing files without backup
         #[arg(long)]
@@ -53,8 +65,12 @@ pub enum Command {
 
     /// Show diff between generated and staged files
     Diff {
-        /// Files/globs to diff (default: all)
+        /// Files/globs to diff
         files: Vec<String>,
+
+        /// Process all configured files
+        #[arg(long)]
+        all: bool,
     },
 
     /// Import existing config files into management

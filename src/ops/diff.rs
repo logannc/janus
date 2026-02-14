@@ -4,7 +4,7 @@ use tracing::info;
 
 use crate::config::Config;
 
-pub fn run(config: &Config, files: &[String]) -> Result<()> {
+pub fn run(config: &Config, files: Option<&[String]>) -> Result<()> {
     let entries = config.filter_files(files);
     if entries.is_empty() {
         info!("No files to diff");

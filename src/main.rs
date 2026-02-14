@@ -4,12 +4,24 @@ mod ops;
 mod paths;
 mod state;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
 use cli::{Cli, Command};
 use config::Config;
+
+/// Validate that either explicit files or `--all` was provided.
+/// Returns `None` to mean "all files".
+fn require_files_or_all(files: Vec<String>, all: bool) -> Result<Option<Vec<String>>> {
+    if all && !files.is_empty() {
+        bail!("Cannot specify both --all and explicit files");
+    }
+    if !all && files.is_empty() {
+        bail!("Specify files to process, or use --all");
+    }
+    if all { Ok(None) } else { Ok(Some(files)) }
+}
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -36,17 +48,21 @@ fn main() -> Result<()> {
             let config = Config::load(&config_path)?;
 
             match command {
-                Command::Generate { files } => {
-                    ops::generate::run(&config, &files, cli.dry_run)?;
+                Command::Generate { files, all } => {
+                    let files = require_files_or_all(files, all)?;
+                    ops::generate::run(&config, files.as_deref(), cli.dry_run)?;
                 }
-                Command::Stage { files } => {
-                    ops::stage::run(&config, &files, cli.dry_run)?;
+                Command::Stage { files, all } => {
+                    let files = require_files_or_all(files, all)?;
+                    ops::stage::run(&config, files.as_deref(), cli.dry_run)?;
                 }
-                Command::Deploy { files, force } => {
-                    ops::deploy::run(&config, &files, force, cli.dry_run)?;
+                Command::Deploy { files, all, force } => {
+                    let files = require_files_or_all(files, all)?;
+                    ops::deploy::run(&config, files.as_deref(), force, cli.dry_run)?;
                 }
-                Command::Diff { files } => {
-                    ops::diff::run(&config, &files)?;
+                Command::Diff { files, all } => {
+                    let files = require_files_or_all(files, all)?;
+                    ops::diff::run(&config, files.as_deref())?;
                 }
                 Command::Import {
                     path,

@@ -6,7 +6,7 @@ use crate::config::Config;
 use crate::paths::expand_tilde;
 use crate::state::State;
 
-pub fn run(config: &Config, files: &[String], force: bool, dry_run: bool) -> Result<()> {
+pub fn run(config: &Config, files: Option<&[String]>, force: bool, dry_run: bool) -> Result<()> {
     let entries = config.filter_files(files);
     if entries.is_empty() {
         info!("No files to deploy");
@@ -19,7 +19,7 @@ pub fn run(config: &Config, files: &[String], force: bool, dry_run: bool) -> Res
 
     for entry in &entries {
         let staged_path = staged_dir.join(&entry.src);
-        let target_path = expand_tilde(&entry.target);
+        let target_path = expand_tilde(&entry.target());
 
         if !staged_path.exists() {
             anyhow::bail!(
@@ -74,7 +74,7 @@ pub fn run(config: &Config, files: &[String], force: bool, dry_run: bool) -> Res
         std::os::unix::fs::symlink(&staged_path, &target_path)
             .with_context(|| format!("Failed to create symlink: {} -> {}", target_path.display(), staged_path.display()))?;
 
-        state.add_deployed(entry.src.clone(), entry.target.clone());
+        state.add_deployed(entry.src.clone(), entry.target());
         info!("Deployed {} -> {}", entry.src, target_path.display());
     }
 
