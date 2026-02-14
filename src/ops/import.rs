@@ -117,8 +117,15 @@ fn import_file(
     dry_run: bool,
 ) -> Result<()> {
     // Determine destination path in dotfiles dir
-    let dest_relative = determine_dest_path(file_path, dotfiles_dir)?;
+    let dest_relative = determine_dest_path(file_path)?;
     let dest_path = dotfiles_dir.join(&dest_relative);
+
+    if dest_path.exists() {
+        anyhow::bail!(
+            "Destination already exists: {} (would overwrite existing source file)",
+            dest_path.display()
+        );
+    }
 
     if dry_run {
         info!("[dry-run] Would import: {} -> {}", target_str, dest_relative);
@@ -159,48 +166,42 @@ fn import_file(
     Ok(())
 }
 
-fn determine_dest_path(file_path: &Path, dotfiles_dir: &Path) -> Result<String> {
+fn determine_dest_path(file_path: &Path) -> Result<String> {
     let config_dir = dirs::config_dir().unwrap_or_else(|| expand_tilde("~/.config"));
 
+    // Files under ~/.config/ → strip that prefix, preserving subdirectory structure
     if let Ok(relative) = file_path.strip_prefix(&config_dir) {
-        // Under config dir: strip the config prefix
         return Ok(relative.display().to_string());
     }
 
+    // Files under ~/ → use relative path, stripping leading dot from hidden dirs
     if let Some(home) = dirs::home_dir() {
         if let Ok(relative) = file_path.strip_prefix(&home) {
-            // Under home: use the relative path but strip leading dot
             let rel_str = relative.display().to_string();
             let stripped = rel_str.strip_prefix('.').unwrap_or(&rel_str);
-            // If it would conflict with an existing file, use more path components
-            let dest = dotfiles_dir.join(stripped);
-            if !dest.exists() {
-                return Ok(stripped.to_string());
-            }
+            return Ok(stripped.to_string());
         }
     }
 
-    // Fallback: use the file name, disambiguate if needed
+    // Fallback for files outside ~/ (e.g. /etc/systemd/system/foo.service):
+    // flatten the parent directory into a single component with underscores
     let file_name = file_path
         .file_name()
         .context("File has no name")?
         .to_string_lossy()
         .to_string();
 
-    let dest = dotfiles_dir.join(&file_name);
-    if !dest.exists() {
-        return Ok(file_name);
-    }
+    let parent = file_path
+        .parent()
+        .context("File has no parent directory")?;
 
-    // Disambiguate with parent directory name
-    if let Some(parent) = file_path.parent() {
-        if let Some(parent_name) = parent.file_name() {
-            let disambiguated = format!("{}/{}", parent_name.to_string_lossy(), file_name);
-            return Ok(disambiguated);
-        }
-    }
+    // Strip leading / and replace path separators with underscores
+    let parent_flat = parent
+        .to_string_lossy()
+        .trim_start_matches('/')
+        .replace('/', "_");
 
-    Ok(file_name)
+    Ok(format!("{parent_flat}/{file_name}"))
 }
 
 fn append_config_entry(config_path: &Path, src: &str, target: &str) -> Result<()> {
