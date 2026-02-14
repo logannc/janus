@@ -145,7 +145,7 @@ fn import_file(
 
     crate::ops::generate::run(&config, Some(&file_patterns), false)?;
     crate::ops::stage::run(&config, Some(&file_patterns), false)?;
-    crate::ops::deploy::run(&config, Some(&file_patterns), false, false)?;
+    crate::ops::deploy::run(&config, Some(&file_patterns), true, false)?;
 
     state.add_deployed(dest_relative.clone(), target_str.to_string());
     info!("Imported {}", target_str);
