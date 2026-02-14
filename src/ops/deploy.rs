@@ -4,7 +4,7 @@ use tracing::{info, warn};
 
 use crate::config::Config;
 use crate::paths::expand_tilde;
-use crate::state::State;
+use crate::state::{RecoveryInfo, State};
 
 pub fn run(config: &Config, files: Option<&[String]>, force: bool, dry_run: bool) -> Result<()> {
     let entries = config.filter_files(files);
@@ -46,11 +46,20 @@ pub fn run(config: &Config, files: Option<&[String]>, force: bool, dry_run: bool
         deploy_symlink(&staged_path, &target_path, force)?;
 
         state.add_deployed(entry.src.clone(), entry.target());
+        state.save_with_recovery(RecoveryInfo {
+            situation: vec![
+                format!("{} has been deployed to {}", entry.src, target_path.display()),
+            ],
+            consequence: vec![
+                format!("janus will not know {} is deployed to {}", entry.src, target_path.display()),
+            ],
+            instructions: vec![
+                format!("Add a [[deployed]] entry to the statefile with src = \"{}\" and target = \"{}\"",
+                    entry.src, entry.target()),
+                format!("Or re-run: janus deploy {}", entry.src),
+            ],
+        })?;
         info!("Deployed {} -> {}", entry.src, target_path.display());
-    }
-
-    if !dry_run {
-        state.save()?;
     }
 
     info!("Deployed {} file(s)", entries.len());

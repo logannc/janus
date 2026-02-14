@@ -8,7 +8,7 @@ use walkdir::WalkDir;
 
 use crate::config::Config;
 use crate::paths::{collapse_tilde, expand_tilde};
-use crate::state::State;
+use crate::state::{RecoveryInfo, State};
 
 pub fn run(
     config: &Config,
@@ -80,6 +80,17 @@ pub fn run(
                 1 => {
                     // Ignore
                     state.add_ignored(target_str.clone(), "user_declined".to_string());
+                    state.save_with_recovery(RecoveryInfo {
+                        situation: vec![
+                            format!("{target_str} was marked as ignored"),
+                        ],
+                        consequence: vec![
+                            format!("{target_str} will be prompted again on next import"),
+                        ],
+                        instructions: vec![
+                            format!("Add an [[ignored]] entry to the statefile with path = \"{target_str}\""),
+                        ],
+                    })?;
                     info!("Ignored {}", target_str);
                     continue;
                 }
@@ -99,10 +110,6 @@ pub fn run(
             &mut state,
             dry_run,
         )?;
-    }
-
-    if !dry_run {
-        state.save()?;
     }
 
     Ok(())
@@ -162,6 +169,19 @@ fn import_file(
     crate::ops::deploy::run(&config, Some(&file_patterns), true, false)?;
 
     state.add_deployed(dest_relative.clone(), target_str.to_string());
+    state.save_with_recovery(RecoveryInfo {
+        situation: vec![
+            format!("{target_str} has been imported and deployed"),
+        ],
+        consequence: vec![
+            format!("janus will not know {target_str} is deployed"),
+            "The file is already in the dotfiles dir and config".to_string(),
+        ],
+        instructions: vec![
+            format!("Add a [[deployed]] entry to the statefile with src = \"{dest_relative}\" and target = \"{target_str}\""),
+            format!("Or re-run: janus deploy {dest_relative}"),
+        ],
+    })?;
     info!("Imported {}", target_str);
     Ok(())
 }

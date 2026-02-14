@@ -2,6 +2,15 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use tracing::warn;
+
+/// Describes what happened and how to recover when a state save fails
+/// after a mutation has already been applied to disk.
+pub struct RecoveryInfo {
+    pub situation: Vec<String>,
+    pub consequence: Vec<String>,
+    pub instructions: Vec<String>,
+}
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct State {
@@ -58,6 +67,27 @@ impl State {
             toml::to_string_pretty(self).with_context(|| "Failed to serialize state")?;
         std::fs::write(&self.path, contents)
             .with_context(|| format!("Failed to write state file: {}", self.path.display()))?;
+        Ok(())
+    }
+
+    /// Save state, emitting recovery instructions on failure.
+    pub fn save_with_recovery(&self, recovery: RecoveryInfo) -> Result<()> {
+        if let Err(e) = self.save() {
+            warn!("Situation:");
+            for line in &recovery.situation {
+                warn!("  - {line}");
+            }
+            warn!("  - Update to statefile failed: {e:#}");
+            warn!("Result:");
+            for line in &recovery.consequence {
+                warn!("  - {line}");
+            }
+            warn!("Instructions to fix:");
+            for line in &recovery.instructions {
+                warn!("  - {line}");
+            }
+            return Err(e);
+        }
         Ok(())
     }
 
