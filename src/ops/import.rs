@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use dialoguer::Select;
+use std::collections::HashSet;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
@@ -45,11 +46,17 @@ pub fn run(
 
     info!("Found {} file(s) to consider", files.len());
 
+    let managed_targets: HashSet<PathBuf> = config
+        .files
+        .iter()
+        .map(|f| expand_tilde(&f.target()))
+        .collect();
+
     for file_path in &files {
         let target_str = collapse_tilde(file_path);
 
         // Check if already managed
-        if config.files.iter().any(|f| expand_tilde(&f.target()) == *file_path) {
+        if managed_targets.contains(file_path) {
             debug!("Already managed, skipping: {}", target_str);
             continue;
         }

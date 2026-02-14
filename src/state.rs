@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -11,6 +12,10 @@ pub struct State {
 
     #[serde(skip)]
     path: PathBuf,
+    #[serde(skip)]
+    ignored_index: HashSet<String>,
+    #[serde(skip)]
+    deployed_index: HashSet<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -26,6 +31,11 @@ pub struct DeployedEntry {
 }
 
 impl State {
+    fn rebuild_indexes(&mut self) {
+        self.ignored_index = self.ignored.iter().map(|e| e.path.clone()).collect();
+        self.deployed_index = self.deployed.iter().map(|e| e.src.clone()).collect();
+    }
+
     pub fn load(dotfiles_dir: &Path) -> Result<Self> {
         let path = dotfiles_dir.join(".janus_state.toml");
         if !path.exists() {
@@ -39,6 +49,7 @@ impl State {
         let mut state: State =
             toml::from_str(&contents).with_context(|| "Failed to parse state file")?;
         state.path = path;
+        state.rebuild_indexes();
         Ok(state)
     }
 
@@ -51,26 +62,25 @@ impl State {
     }
 
     pub fn is_ignored(&self, path: &str) -> bool {
-        self.ignored.iter().any(|e| e.path == path)
+        self.ignored_index.contains(path)
     }
 
     #[allow(dead_code)]
     pub fn is_deployed(&self, src: &str) -> bool {
-        self.deployed.iter().any(|e| e.src == src)
+        self.deployed_index.contains(src)
     }
 
     pub fn add_ignored(&mut self, path: String, reason: String) {
-        if !self.is_ignored(&path) {
+        if self.ignored_index.insert(path.clone()) {
             self.ignored.push(IgnoredEntry { path, reason });
         }
     }
 
     pub fn add_deployed(&mut self, src: String, target: String) {
-        // Update existing entry or add new one
-        if let Some(entry) = self.deployed.iter_mut().find(|e| e.src == src) {
-            entry.target = target;
-        } else {
+        if self.deployed_index.insert(src.clone()) {
             self.deployed.push(DeployedEntry { src, target });
+        } else if let Some(entry) = self.deployed.iter_mut().find(|e| e.src == src) {
+            entry.target = target;
         }
     }
 }
