@@ -79,6 +79,51 @@ fn main() -> Result<()> {
                 } => {
                     ops::import::run(&config, &config_path, &path, all, max_depth, cli.dry_run)?;
                 }
+                Command::Apply { files, all, force } => {
+                    let files = require_files_or_all(files, all)?;
+                    ops::apply::run(&config, files.as_deref(), force, cli.dry_run)?;
+                }
+                Command::Undeploy {
+                    files,
+                    all,
+                    remove_file,
+                } => {
+                    let files = require_files_or_all(files, all)?;
+                    ops::undeploy::run(&config, files.as_deref(), remove_file, cli.dry_run)?;
+                }
+                Command::Unimport {
+                    files,
+                    remove_file,
+                } => {
+                    if files.is_empty() {
+                        anyhow::bail!("Specify files to unimport");
+                    }
+                    ops::unimport::run(
+                        &config,
+                        &config_path,
+                        &files,
+                        remove_file,
+                        cli.dry_run,
+                    )?;
+                }
+                Command::Status {
+                    files,
+                    all,
+                    only_diffs,
+                    deployed,
+                    undeployed,
+                } => {
+                    let files = require_files_or_all(files, all)?;
+                    ops::status::run(
+                        &config,
+                        files.as_deref(),
+                        ops::status::StatusFilters {
+                            only_diffs,
+                            deployed,
+                            undeployed,
+                        },
+                    )?;
+                }
                 Command::Init { .. } => unreachable!(),
             }
         }

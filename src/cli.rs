@@ -101,4 +101,64 @@ pub enum Command {
         #[arg(long, default_value = "10")]
         max_depth: usize,
     },
+
+    /// Run generate + stage + deploy in one shot
+    Apply {
+        /// Files/globs to apply
+        files: Vec<String>,
+
+        /// Process all configured files
+        #[arg(long)]
+        all: bool,
+
+        /// Overwrite existing files without backup
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Remove deployed symlinks
+    Undeploy {
+        /// Files/globs to undeploy
+        files: Vec<String>,
+
+        /// Process all configured files
+        #[arg(long)]
+        all: bool,
+
+        /// Remove the symlink without leaving a copy of the file
+        #[arg(long)]
+        remove_file: bool,
+    },
+
+    /// Fully reverse an import: undeploy, remove config entry, clean up source files
+    Unimport {
+        /// Source files to unimport (matched against src paths in config)
+        files: Vec<String>,
+
+        /// Remove the deployed symlink without leaving a copy of the file
+        #[arg(long)]
+        remove_file: bool,
+    },
+
+    /// Show pipeline status for managed files
+    Status {
+        /// Files/globs to check
+        files: Vec<String>,
+
+        /// Process all configured files
+        #[arg(long)]
+        all: bool,
+
+        /// Only show files with diffs
+        #[arg(long)]
+        only_diffs: bool,
+
+        /// Only show deployed files
+        #[arg(long)]
+        deployed: bool,
+
+        /// Only show undeployed files
+        #[arg(long)]
+        undeployed: bool,
+    },
 }

@@ -113,4 +113,16 @@ impl State {
             entry.target = target;
         }
     }
+
+    pub fn remove_deployed(&mut self, src: &str) {
+        if self.deployed_index.remove(src) {
+            self.deployed.retain(|e| e.src != src);
+        }
+    }
+
+    pub fn remove_ignored(&mut self, path: &str) {
+        if self.ignored_index.remove(path) {
+            self.ignored.retain(|e| e.path != path);
+        }
+    }
 }
