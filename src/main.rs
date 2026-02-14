@@ -27,10 +27,15 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Initialize tracing
-    let filter = match cli.verbose {
+    // verbosity is a signed level: positive = more verbose, negative = quieter
+    let level = cli.verbose as i8 - cli.quiet as i8;
+    let filter = match level {
+        ..=-3 => "janus=off",
+        -2 => "janus=error",
+        -1 => "janus=warn",
         0 => "janus=info",
         1 => "janus=debug",
-        _ => "janus=trace",
+        2.. => "janus=trace",
     };
     tracing_subscriber::fmt()
         .with_env_filter(

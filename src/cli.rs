@@ -12,6 +12,10 @@ pub struct Cli {
     #[arg(short, long, action = clap::ArgAction::Count, global = true)]
     pub verbose: u8,
 
+    /// Decrease verbosity (-q = WARN, -qq = ERROR, -qqq = OFF)
+    #[arg(short, long, action = clap::ArgAction::Count, global = true)]
+    pub quiet: u8,
+
     /// Preview actions without making changes
     #[arg(long, global = true)]
     pub dry_run: bool,
