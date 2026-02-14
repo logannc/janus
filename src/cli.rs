@@ -77,6 +77,17 @@ pub enum Command {
         all: bool,
     },
 
+    /// Remove generated files or clean up orphans
+    Clean {
+        /// Delete all generated files
+        #[arg(long)]
+        generated: bool,
+
+        /// Remove orphan files from .generated/ and .staged/
+        #[arg(long)]
+        orphans: bool,
+    },
+
     /// Import existing config files into management
     Import {
         /// Path to import (file or directory)

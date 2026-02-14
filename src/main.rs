@@ -69,6 +69,9 @@ fn main() -> Result<()> {
                     let files = require_files_or_all(files, all)?;
                     ops::diff::run(&config, files.as_deref())?;
                 }
+                Command::Clean { generated, orphans } => {
+                    ops::clean::run(&config, generated, orphans, cli.dry_run)?;
+                }
                 Command::Import {
                     path,
                     all,

@@ -1,3 +1,4 @@
+pub mod clean;
 pub mod deploy;
 pub mod diff;
 pub mod generate;
