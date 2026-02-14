@@ -29,7 +29,11 @@ pub fn run(config: &Config, files: Option<&[String]>, force: bool, dry_run: bool
         }
 
         if dry_run {
-            info!("[dry-run] Would deploy: {} -> {}", entry.src, target_path.display());
+            info!(
+                "[dry-run] Would deploy: {} -> {}",
+                entry.src,
+                target_path.display()
+            );
             continue;
         }
 
@@ -39,40 +43,7 @@ pub fn run(config: &Config, files: Option<&[String]>, force: bool, dry_run: bool
                 .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
         }
 
-        // Handle existing file at target
-        if target_path.exists() || target_path.is_symlink() {
-            if is_janus_symlink(&target_path, &staged_path) {
-                // Already a janus symlink, just update
-                std::fs::remove_file(&target_path)
-                    .with_context(|| format!("Failed to remove existing symlink: {}", target_path.display()))?;
-            } else if force {
-                warn!("Overwriting existing file: {}", target_path.display());
-                std::fs::remove_file(&target_path)
-                    .with_context(|| format!("Failed to remove existing file: {}", target_path.display()))?;
-            } else {
-                // Backup existing file
-                let backup_path = target_path.with_extension(
-                    format!(
-                        "{}.janus.bak",
-                        target_path
-                            .extension()
-                            .map(|e| e.to_string_lossy().to_string())
-                            .unwrap_or_default()
-                    ),
-                );
-                warn!(
-                    "Backing up existing file: {} -> {}",
-                    target_path.display(),
-                    backup_path.display()
-                );
-                std::fs::rename(&target_path, &backup_path)
-                    .with_context(|| format!("Failed to backup file: {}", target_path.display()))?;
-            }
-        }
-
-        // Create symlink
-        std::os::unix::fs::symlink(&staged_path, &target_path)
-            .with_context(|| format!("Failed to create symlink: {} -> {}", target_path.display(), staged_path.display()))?;
+        deploy_symlink(&staged_path, &target_path, force)?;
 
         state.add_deployed(entry.src.clone(), entry.target());
         info!("Deployed {} -> {}", entry.src, target_path.display());
@@ -84,6 +55,85 @@ pub fn run(config: &Config, files: Option<&[String]>, force: bool, dry_run: bool
 
     info!("Deployed {} file(s)", entries.len());
     Ok(())
+}
+
+#[cfg(feature = "atomic-deploy")]
+fn deploy_symlink(staged_path: &Path, target_path: &Path, force: bool) -> Result<()> {
+    let exists = target_path.exists() || target_path.is_symlink();
+
+    // Backup if needed (copy, so the original stays in place until the atomic swap)
+    if exists && !force && !is_janus_symlink(target_path, staged_path) {
+        let backup_path = backup_path_for(target_path);
+        warn!(
+            "Backing up existing file: {} -> {}",
+            target_path.display(),
+            backup_path.display()
+        );
+        std::fs::copy(target_path, &backup_path)
+            .with_context(|| format!("Failed to backup file: {}", target_path.display()))?;
+    } else if exists && force && !is_janus_symlink(target_path, staged_path) {
+        warn!("Overwriting existing file: {}", target_path.display());
+    }
+
+    // Create a temp symlink in the same directory, then atomically rename over the target
+    let temp_path = target_path.with_extension(".janus.tmp");
+    // Clean up any stale temp symlink
+    if temp_path.exists() || temp_path.is_symlink() {
+        std::fs::remove_file(&temp_path)
+            .with_context(|| format!("Failed to remove stale temp symlink: {}", temp_path.display()))?;
+    }
+
+    std::os::unix::fs::symlink(staged_path, &temp_path)
+        .with_context(|| format!("Failed to create temp symlink: {}", temp_path.display()))?;
+
+    std::fs::rename(&temp_path, target_path).with_context(|| {
+        // Clean up temp symlink on failure
+        let _ = std::fs::remove_file(&temp_path);
+        format!(
+            "Failed to atomically replace: {}",
+            target_path.display()
+        )
+    })?;
+
+    Ok(())
+}
+
+#[cfg(not(feature = "atomic-deploy"))]
+fn deploy_symlink(staged_path: &Path, target_path: &Path, force: bool) -> Result<()> {
+    if target_path.exists() || target_path.is_symlink() {
+        if is_janus_symlink(target_path, staged_path) {
+            std::fs::remove_file(target_path)
+                .with_context(|| format!("Failed to remove existing symlink: {}", target_path.display()))?;
+        } else if force {
+            warn!("Overwriting existing file: {}", target_path.display());
+            std::fs::remove_file(target_path)
+                .with_context(|| format!("Failed to remove existing file: {}", target_path.display()))?;
+        } else {
+            let backup_path = backup_path_for(target_path);
+            warn!(
+                "Backing up existing file: {} -> {}",
+                target_path.display(),
+                backup_path.display()
+            );
+            std::fs::rename(target_path, &backup_path)
+                .with_context(|| format!("Failed to backup file: {}", target_path.display()))?;
+        }
+    }
+
+    std::os::unix::fs::symlink(staged_path, target_path)
+        .with_context(|| format!("Failed to create symlink: {} -> {}", target_path.display(), staged_path.display()))?;
+
+    Ok(())
+}
+
+fn backup_path_for(target_path: &Path) -> std::path::PathBuf {
+    target_path.with_extension(format!(
+        "{}.janus.bak",
+        target_path
+            .extension()
+            .map(|e| e.to_string_lossy().to_string())
+            .unwrap_or_default()
+    ))
 }
 
 fn is_janus_symlink(target: &Path, expected_staged: &Path) -> bool {
