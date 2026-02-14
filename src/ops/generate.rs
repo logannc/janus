@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use tera::Tera;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 
 use crate::config::{Config, FileEntry};
 
@@ -68,11 +68,30 @@ pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<(
     // Load global vars
     let global_vars = load_vars(&dotfiles_dir, &config.vars)?;
 
+    let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
+    let mut succeeded = 0usize;
+
     for entry in &entries {
-        generate_file(config, entry, &dotfiles_dir, &generated_dir, &global_vars, dry_run)?;
+        match generate_file(config, entry, &dotfiles_dir, &generated_dir, &global_vars, dry_run) {
+            Ok(()) => succeeded += 1,
+            Err(e) => {
+                warn!("Failed to generate {}: {e:#}", entry.src);
+                errors.push((entry.src.clone(), e));
+            }
+        }
     }
 
-    info!("Generated {} file(s)", entries.len());
+    if errors.is_empty() {
+        info!("Generated {} file(s)", succeeded);
+    } else {
+        info!("Generated {} file(s) with {} failure(s)", succeeded, errors.len());
+        let mut msg = format!("Failed to generate {} file(s):", errors.len());
+        for (src, e) in &errors {
+            msg.push_str(&format!("\n  {src}: {e:#}"));
+        }
+        anyhow::bail!(msg);
+    }
+
     Ok(())
 }
 
