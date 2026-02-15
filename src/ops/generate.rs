@@ -109,6 +109,7 @@ pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<(
 }
 
 /// Generate a single file: render template or copy, then preserve permissions.
+#[allow(clippy::too_many_arguments)]
 fn generate_file(
     config: &Config,
     entry: &FileEntry,

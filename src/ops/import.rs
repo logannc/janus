@@ -215,13 +215,12 @@ fn determine_dest_path(file_path: &Path) -> Result<String> {
     }
 
     // Files under ~/ → use relative path, stripping leading dot from hidden dirs
-    if let Some(home) = dirs::home_dir() {
-        if let Ok(relative) = file_path.strip_prefix(&home) {
+    if let Some(home) = dirs::home_dir()
+        && let Ok(relative) = file_path.strip_prefix(&home) {
             let rel_str = relative.display().to_string();
             let stripped = rel_str.strip_prefix('.').unwrap_or(&rel_str);
             return Ok(stripped.to_string());
         }
-    }
 
     // Fallback for files outside ~/ (e.g. /etc/systemd/system/foo.service):
     // flatten the parent directory into a single component with underscores

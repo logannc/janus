@@ -117,17 +117,16 @@ fn remove_config_entry(config_path: &Path, src: &str) -> Result<()> {
         .parse::<toml_edit::DocumentMut>()
         .with_context(|| "Failed to parse config for editing")?;
 
-    if let Some(files) = doc.get_mut("files") {
-        if let Some(array) = files.as_array_of_tables_mut() {
+    if let Some(files) = doc.get_mut("files")
+        && let Some(array) = files.as_array_of_tables_mut() {
             // Find and remove the entry matching src
             let mut index_to_remove = None;
             for (i, table) in array.iter().enumerate() {
-                if let Some(entry_src) = table.get("src").and_then(|v| v.as_str()) {
-                    if entry_src == src {
+                if let Some(entry_src) = table.get("src").and_then(|v| v.as_str())
+                    && entry_src == src {
                         index_to_remove = Some(i);
                         break;
                     }
-                }
             }
 
             if let Some(idx) = index_to_remove {
@@ -136,7 +135,6 @@ fn remove_config_entry(config_path: &Path, src: &str) -> Result<()> {
                 warn!("Config entry not found for src: {}", src);
             }
         }
-    }
 
     std::fs::write(config_path, doc.to_string())
         .with_context(|| format!("Failed to write config: {}", config_path.display()))?;

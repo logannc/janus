@@ -85,11 +85,10 @@ fn clean_generated(config: &Config, dry_run: bool) -> CleanResult {
                     errors.push((path.to_path_buf(), e.into()));
                 }
             }
-        } else if entry.file_type().is_dir() {
-            if std::fs::remove_dir(path).is_err() {
+        } else if entry.file_type().is_dir()
+            && std::fs::remove_dir(path).is_err() {
                 debug!("Keeping non-empty directory: {}", path.display());
             }
-        }
     }
 
     info!("Cleaned {} generated file(s)", count);

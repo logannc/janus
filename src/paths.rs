@@ -14,11 +14,10 @@ pub fn expand_tilde(path: &str) -> PathBuf {
         if let Some(home) = dirs::home_dir() {
             return home.join(rest);
         }
-    } else if path == "~" {
-        if let Some(home) = dirs::home_dir() {
+    } else if path == "~"
+        && let Some(home) = dirs::home_dir() {
             return home;
         }
-    }
     PathBuf::from(path)
 }
 
@@ -27,10 +26,9 @@ pub fn expand_tilde(path: &str) -> PathBuf {
 /// Returns the full path string if the home directory cannot be determined
 /// or the path is not under it.
 pub fn collapse_tilde(path: &Path) -> String {
-    if let Some(home) = dirs::home_dir() {
-        if let Ok(rest) = path.strip_prefix(&home) {
+    if let Some(home) = dirs::home_dir()
+        && let Ok(rest) = path.strip_prefix(&home) {
             return format!("~/{}", rest.display());
         }
-    }
     path.display().to_string()
 }

@@ -166,8 +166,8 @@ fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> 
         match *op {
             DiffOp::Equal { old_index, len, .. } => {
                 // Copy source lines for equal regions (preserves template syntax)
-                for i in old_index..old_index + len {
-                    output_lines.push(source_lines[i]);
+                for source_line in source_lines.iter().skip(old_index).take(len) {
+                    output_lines.push(source_line)
                 }
             }
             DiffOp::Insert { new_index, new_len, .. } => {
@@ -410,6 +410,7 @@ fn print_delete_hunk(
     println!();
 }
 
+#[allow(clippy::too_many_arguments)]
 fn print_replace_hunk(
     src: &str, hunk_num: usize, total: usize,
     old_index: usize, old_len: usize,

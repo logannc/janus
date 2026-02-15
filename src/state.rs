@@ -157,6 +157,7 @@ impl State {
     }
 
     /// Remove an ignored entry by path. No-op if not tracked.
+    #[allow(dead_code)]
     pub fn remove_ignored(&mut self, path: &str) {
         if self.ignored_index.remove(path) {
             self.ignored.retain(|e| e.path != path);
