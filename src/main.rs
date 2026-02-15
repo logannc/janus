@@ -17,19 +17,35 @@ use tracing_subscriber::EnvFilter;
 use cli::{Cli, Command};
 use config::Config;
 
-/// Validate that either explicit files or `--all` was provided, but not both.
+/// Resolve file selection from explicit files, `--all`, or `--filesets`.
 ///
-/// Returns `None` when `--all` is set (meaning "process every configured file"),
-/// or `Some(files)` when explicit file patterns were given. Errors if neither
-/// or both are specified.
-fn require_files_or_all(files: Vec<String>, all: bool) -> Result<Option<Vec<String>>> {
-    if all && !files.is_empty() {
-        bail!("Cannot specify both --all and explicit files");
+/// Exactly one source must be provided. Returns `None` for "all files",
+/// or `Some(patterns)` for explicit files or resolved filesets.
+fn resolve_file_selection(
+    files: Vec<String>,
+    all: bool,
+    filesets: Vec<String>,
+    config: &Config,
+) -> Result<Option<Vec<String>>> {
+    let sources = [!files.is_empty(), all, !filesets.is_empty()]
+        .iter()
+        .filter(|&&b| b)
+        .count();
+
+    if sources > 1 {
+        bail!("Cannot combine explicit files, --all, and --filesets");
     }
-    if !all && files.is_empty() {
-        bail!("Specify files to process, or use --all");
+    if sources == 0 {
+        bail!("Specify files to process, --all, or --filesets");
     }
-    if all { Ok(None) } else { Ok(Some(files)) }
+
+    if all {
+        return Ok(None);
+    }
+    if !filesets.is_empty() {
+        return Ok(Some(config.resolve_filesets(&filesets)?));
+    }
+    Ok(Some(files))
 }
 
 fn main() -> Result<()> {
@@ -62,20 +78,20 @@ fn main() -> Result<()> {
             let config = Config::load(&config_path)?;
 
             match command {
-                Command::Generate { files, all } => {
-                    let files = require_files_or_all(files, all)?;
+                Command::Generate { files, all, filesets } => {
+                    let files = resolve_file_selection(files, all, filesets, &config)?;
                     ops::generate::run(&config, files.as_deref(), cli.dry_run)?;
                 }
-                Command::Stage { files, all } => {
-                    let files = require_files_or_all(files, all)?;
+                Command::Stage { files, all, filesets } => {
+                    let files = resolve_file_selection(files, all, filesets, &config)?;
                     ops::stage::run(&config, files.as_deref(), cli.dry_run)?;
                 }
-                Command::Deploy { files, all, force } => {
-                    let files = require_files_or_all(files, all)?;
+                Command::Deploy { files, all, force, filesets } => {
+                    let files = resolve_file_selection(files, all, filesets, &config)?;
                     ops::deploy::run(&config, files.as_deref(), force, cli.dry_run)?;
                 }
-                Command::Diff { files, all } => {
-                    let files = require_files_or_all(files, all)?;
+                Command::Diff { files, all, filesets } => {
+                    let files = resolve_file_selection(files, all, filesets, &config)?;
                     ops::diff::run(&config, files.as_deref())?;
                 }
                 Command::Clean { generated, orphans } => {
@@ -88,25 +104,35 @@ fn main() -> Result<()> {
                 } => {
                     ops::import::run(&config, &config_path, &path, all, max_depth, cli.dry_run)?;
                 }
-                Command::Apply { files, all, force } => {
-                    let files = require_files_or_all(files, all)?;
+                Command::Apply { files, all, force, filesets } => {
+                    let files = resolve_file_selection(files, all, filesets, &config)?;
                     ops::apply::run(&config, files.as_deref(), force, cli.dry_run)?;
                 }
                 Command::Undeploy {
                     files,
                     all,
                     remove_file,
+                    filesets,
                 } => {
-                    let files = require_files_or_all(files, all)?;
+                    let files = resolve_file_selection(files, all, filesets, &config)?;
                     ops::undeploy::run(&config, files.as_deref(), remove_file, cli.dry_run)?;
                 }
                 Command::Unimport {
                     files,
                     remove_file,
+                    filesets,
                 } => {
-                    if files.is_empty() {
-                        anyhow::bail!("Specify files to unimport");
-                    }
+                    let files = if !filesets.is_empty() {
+                        if !files.is_empty() {
+                            bail!("Cannot combine explicit files and --filesets");
+                        }
+                        config.resolve_filesets(&filesets)?
+                    } else {
+                        if files.is_empty() {
+                            bail!("Specify files to unimport or use --filesets");
+                        }
+                        files
+                    };
                     ops::unimport::run(
                         &config,
                         &config_path,
@@ -121,8 +147,9 @@ fn main() -> Result<()> {
                     only_diffs,
                     deployed,
                     undeployed,
+                    filesets,
                 } => {
-                    let files = require_files_or_all(files, all)?;
+                    let files = resolve_file_selection(files, all, filesets, &config)?;
                     ops::status::run(
                         &config,
                         files.as_deref(),

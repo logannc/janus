@@ -48,6 +48,10 @@ pub enum Command {
         /// Process all configured files
         #[arg(long)]
         all: bool,
+
+        /// Filesets to operate on (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        filesets: Vec<String>,
     },
 
     /// Copy generated files into .staged/
@@ -58,6 +62,10 @@ pub enum Command {
         /// Process all configured files
         #[arg(long)]
         all: bool,
+
+        /// Filesets to operate on (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        filesets: Vec<String>,
     },
 
     /// Symlink staged files to their target locations
@@ -72,6 +80,10 @@ pub enum Command {
         /// Overwrite existing files without backup
         #[arg(long)]
         force: bool,
+
+        /// Filesets to operate on (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        filesets: Vec<String>,
     },
 
     /// Show diff between generated and staged files
@@ -82,6 +94,10 @@ pub enum Command {
         /// Process all configured files
         #[arg(long)]
         all: bool,
+
+        /// Filesets to operate on (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        filesets: Vec<String>,
     },
 
     /// Remove generated files or clean up orphans
@@ -121,6 +137,10 @@ pub enum Command {
         /// Overwrite existing files without backup
         #[arg(long)]
         force: bool,
+
+        /// Filesets to operate on (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        filesets: Vec<String>,
     },
 
     /// Remove deployed symlinks
@@ -135,6 +155,10 @@ pub enum Command {
         /// Remove the symlink without leaving a copy of the file
         #[arg(long)]
         remove_file: bool,
+
+        /// Filesets to operate on (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        filesets: Vec<String>,
     },
 
     /// Fully reverse an import: undeploy, remove config entry, clean up source files
@@ -145,6 +169,10 @@ pub enum Command {
         /// Remove the deployed symlink without leaving a copy of the file
         #[arg(long)]
         remove_file: bool,
+
+        /// Filesets to operate on (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        filesets: Vec<String>,
     },
 
     /// Show pipeline status for managed files
@@ -167,5 +195,9 @@ pub enum Command {
         /// Only show undeployed files
         #[arg(long)]
         undeployed: bool,
+
+        /// Filesets to operate on (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        filesets: Vec<String>,
     },
 }

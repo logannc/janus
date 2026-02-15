@@ -4,8 +4,9 @@
 //! represents a single managed file with its source path, target path,
 //! template flag, and optional per-file variable overrides.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::paths::expand_tilde;
@@ -21,6 +22,9 @@ pub struct Config {
     /// Managed file entries.
     #[serde(default)]
     pub files: Vec<FileEntry>,
+    /// Named groups of file patterns for batch operations.
+    #[serde(default)]
+    pub filesets: HashMap<String, Vec<String>>,
 }
 
 /// A single managed file entry in the janus config.
@@ -82,6 +86,20 @@ impl Config {
     /// Return the .staged directory path.
     pub fn staged_dir(&self) -> PathBuf {
         self.dotfiles_dir().join(".staged")
+    }
+
+    /// Resolve fileset names to their constituent file/glob patterns.
+    ///
+    /// Errors if any fileset name is not defined in config.
+    pub fn resolve_filesets(&self, names: &[String]) -> Result<Vec<String>> {
+        let mut patterns = Vec::new();
+        for name in names {
+            match self.filesets.get(name) {
+                Some(files) => patterns.extend(files.iter().cloned()),
+                None => bail!("Unknown fileset: {name}"),
+            }
+        }
+        Ok(patterns)
     }
 
     /// Filter file entries by the given file/glob patterns.
