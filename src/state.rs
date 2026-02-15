@@ -92,8 +92,7 @@ impl State {
 
     /// Serialize and write the state file to disk.
     pub fn save(&self) -> Result<()> {
-        let contents =
-            toml::to_string_pretty(self).with_context(|| "Failed to serialize state")?;
+        let contents = toml::to_string_pretty(self).with_context(|| "Failed to serialize state")?;
         std::fs::write(&self.path, contents)
             .with_context(|| format!("Failed to write state file: {}", self.path.display()))?;
         Ok(())

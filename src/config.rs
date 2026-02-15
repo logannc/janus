@@ -4,7 +4,7 @@
 //! represents a single managed file with its source path, target path,
 //! template flag, and optional per-file variable overrides.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -178,15 +178,15 @@ impl Config {
             let mut best: Option<(&str, f64)> = None;
             for entry in &self.files {
                 let score = jaro_winkler(pattern, &entry.src);
-                if score > THRESHOLD
-                    && (best.is_none() || score > best.unwrap().1) {
-                        best = Some((&entry.src, score));
-                    }
+                if score > THRESHOLD && (best.is_none() || score > best.unwrap().1) {
+                    best = Some((&entry.src, score));
+                }
             }
             if let Some((src, _)) = best
-                && !suggestions.contains(&src.to_string()) {
-                    suggestions.push(src.to_string());
-                }
+                && !suggestions.contains(&src.to_string())
+            {
+                suggestions.push(src.to_string());
+            }
         }
         suggestions
     }
@@ -199,10 +199,9 @@ impl Config {
         let mut best: Option<(&str, f64)> = None;
         for key in self.filesets.keys() {
             let score = jaro_winkler(name, key);
-            if score > THRESHOLD
-                && (best.is_none() || score > best.unwrap().1) {
-                    best = Some((key, score));
-                }
+            if score > THRESHOLD && (best.is_none() || score > best.unwrap().1) {
+                best = Some((key, score));
+            }
         }
         best.map(|(k, _)| k.to_string())
     }

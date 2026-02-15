@@ -94,15 +94,13 @@ pub fn run(
                     // Ignore
                     state.add_ignored(target_str.clone(), "user_declined".to_string());
                     state.save_with_recovery(RecoveryInfo {
-                        situation: vec![
-                            format!("{target_str} was marked as ignored"),
-                        ],
-                        consequence: vec![
-                            format!("{target_str} will be prompted again on next import"),
-                        ],
-                        instructions: vec![
-                            format!("Add an [[ignored]] entry to the statefile with path = \"{target_str}\""),
-                        ],
+                        situation: vec![format!("{target_str} was marked as ignored")],
+                        consequence: vec![format!(
+                            "{target_str} will be prompted again on next import"
+                        )],
+                        instructions: vec![format!(
+                            "Add an [[ignored]] entry to the statefile with path = \"{target_str}\""
+                        )],
                     })?;
                     info!("Ignored {}", target_str);
                     continue;
@@ -149,7 +147,10 @@ fn import_file(
     }
 
     if dry_run {
-        info!("[dry-run] Would import: {} -> {}", target_str, dest_relative);
+        info!(
+            "[dry-run] Would import: {} -> {}",
+            target_str, dest_relative
+        );
         return Ok(());
     }
 
@@ -216,11 +217,12 @@ fn determine_dest_path(file_path: &Path) -> Result<String> {
 
     // Files under ~/ → use relative path, stripping leading dot from hidden dirs
     if let Some(home) = dirs::home_dir()
-        && let Ok(relative) = file_path.strip_prefix(&home) {
-            let rel_str = relative.display().to_string();
-            let stripped = rel_str.strip_prefix('.').unwrap_or(&rel_str);
-            return Ok(stripped.to_string());
-        }
+        && let Ok(relative) = file_path.strip_prefix(&home)
+    {
+        let rel_str = relative.display().to_string();
+        let stripped = rel_str.strip_prefix('.').unwrap_or(&rel_str);
+        return Ok(stripped.to_string());
+    }
 
     // Fallback for files outside ~/ (e.g. /etc/systemd/system/foo.service):
     // flatten the parent directory into a single component with underscores
@@ -230,9 +232,7 @@ fn determine_dest_path(file_path: &Path) -> Result<String> {
         .to_string_lossy()
         .to_string();
 
-    let parent = file_path
-        .parent()
-        .context("File has no parent directory")?;
+    let parent = file_path.parent().context("File has no parent directory")?;
 
     // Strip leading / and replace path separators with underscores
     let parent_flat = parent

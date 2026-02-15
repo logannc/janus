@@ -31,8 +31,8 @@ fn load_vars(dotfiles_dir: &Path, var_files: &[String]) -> Result<HashMap<String
         debug!("Loading vars from {}", path.display());
         let contents = std::fs::read_to_string(&path)
             .with_context(|| format!("Failed to read vars file: {}", path.display()))?;
-        let table: HashMap<String, toml::Value> =
-            toml::from_str(&contents).with_context(|| format!("Failed to parse vars file: {}", path.display()))?;
+        let table: HashMap<String, toml::Value> = toml::from_str(&contents)
+            .with_context(|| format!("Failed to parse vars file: {}", path.display()))?;
         vars.extend(table);
     }
     Ok(vars)
@@ -97,7 +97,11 @@ pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<(
     if errors.is_empty() {
         info!("Generated {} file(s)", succeeded);
     } else {
-        info!("Generated {} file(s) with {} failure(s)", succeeded, errors.len());
+        info!(
+            "Generated {} file(s) with {} failure(s)",
+            succeeded,
+            errors.len()
+        );
         let mut msg = format!("Failed to generate {} file(s):", errors.len());
         for (src, e) in &errors {
             msg.push_str(&format!("\n  {src}: {e:#}"));
@@ -159,8 +163,7 @@ fn generate_file(
         let mut secret_entries: Vec<SecretEntry> = global_secret_entries.to_vec();
         for fileset in &matching_filesets {
             if !fileset.secrets.is_empty() {
-                let fileset_secrets =
-                    secrets::parse_secret_files(dotfiles_dir, &fileset.secrets)?;
+                let fileset_secrets = secrets::parse_secret_files(dotfiles_dir, &fileset.secrets)?;
                 secret_entries.extend(fileset_secrets);
             }
         }
@@ -200,8 +203,11 @@ fn generate_file(
     // Preserve file permissions
     let metadata = std::fs::metadata(&src_path)
         .with_context(|| format!("Failed to read metadata: {}", src_path.display()))?;
-    std::fs::set_permissions(&dest_path, std::fs::Permissions::from_mode(metadata.permissions().mode()))
-        .with_context(|| format!("Failed to set permissions: {}", dest_path.display()))?;
+    std::fs::set_permissions(
+        &dest_path,
+        std::fs::Permissions::from_mode(metadata.permissions().mode()),
+    )
+    .with_context(|| format!("Failed to set permissions: {}", dest_path.display()))?;
 
     info!("Generated {}", entry.src);
     Ok(())

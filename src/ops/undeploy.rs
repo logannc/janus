@@ -51,9 +51,8 @@ pub fn undeploy_single(
     }
 
     if remove_file {
-        std::fs::remove_file(target_path).with_context(|| {
-            format!("Failed to remove symlink: {}", target_path.display())
-        })?;
+        std::fs::remove_file(target_path)
+            .with_context(|| format!("Failed to remove symlink: {}", target_path.display()))?;
     } else {
         undeploy_with_copy(&staged_path, target_path)?;
     }
@@ -111,7 +110,13 @@ pub fn run(
             continue;
         }
 
-        if !undeploy_single(&entry.src, &staged_dir, &target_path, remove_file, &mut state)? {
+        if !undeploy_single(
+            &entry.src,
+            &staged_dir,
+            &target_path,
+            remove_file,
+            &mut state,
+        )? {
             continue;
         }
 
@@ -155,8 +160,9 @@ pub fn run(
 fn undeploy_with_copy(staged_path: &Path, target_path: &Path) -> Result<()> {
     let temp_path = target_path.with_extension(".janus.tmp");
     if temp_path.exists() || temp_path.is_symlink() {
-        std::fs::remove_file(&temp_path)
-            .with_context(|| format!("Failed to remove stale temp file: {}", temp_path.display()))?;
+        std::fs::remove_file(&temp_path).with_context(|| {
+            format!("Failed to remove stale temp file: {}", temp_path.display())
+        })?;
     }
 
     std::fs::copy(staged_path, &temp_path).with_context(|| {
@@ -182,9 +188,8 @@ fn undeploy_with_copy(staged_path: &Path, target_path: &Path) -> Result<()> {
 /// Removes the symlink first, then copies. Brief window where the file is missing.
 #[cfg(not(feature = "atomic-deploy"))]
 fn undeploy_with_copy(staged_path: &Path, target_path: &Path) -> Result<()> {
-    std::fs::remove_file(target_path).with_context(|| {
-        format!("Failed to remove symlink: {}", target_path.display())
-    })?;
+    std::fs::remove_file(target_path)
+        .with_context(|| format!("Failed to remove symlink: {}", target_path.display()))?;
 
     std::fs::copy(staged_path, target_path).with_context(|| {
         format!(

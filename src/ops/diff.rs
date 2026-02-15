@@ -31,7 +31,10 @@ pub fn run(config: &Config, files: Option<&[String]>) -> Result<()> {
         let staged_path = staged_dir.join(&entry.src);
 
         if !generated_path.exists() {
-            info!("{}: no generated file (run `janus generate` first)", entry.src);
+            info!(
+                "{}: no generated file (run `janus generate` first)",
+                entry.src
+            );
             continue;
         }
         if !staged_path.exists() {
@@ -39,8 +42,12 @@ pub fn run(config: &Config, files: Option<&[String]>) -> Result<()> {
             continue;
         }
 
-        let generated_content = std::fs::read_to_string(&generated_path)
-            .with_context(|| format!("Failed to read generated file: {}", generated_path.display()))?;
+        let generated_content = std::fs::read_to_string(&generated_path).with_context(|| {
+            format!(
+                "Failed to read generated file: {}",
+                generated_path.display()
+            )
+        })?;
         let staged_content = std::fs::read_to_string(&staged_path)
             .with_context(|| format!("Failed to read staged file: {}", staged_path.display()))?;
 

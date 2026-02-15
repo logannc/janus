@@ -43,7 +43,11 @@ pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<(
     if errors.is_empty() {
         info!("Staged {} file(s)", succeeded);
     } else {
-        info!("Staged {} file(s) with {} failure(s)", succeeded, errors.len());
+        info!(
+            "Staged {} file(s) with {} failure(s)",
+            succeeded,
+            errors.len()
+        );
         let mut msg = format!("Failed to stage {} file(s):", errors.len());
         for (src, e) in &errors {
             msg.push_str(&format!("\n  {src}: {e:#}"));

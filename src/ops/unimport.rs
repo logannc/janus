@@ -55,7 +55,13 @@ pub fn run(
 
         // 1. Undeploy if currently deployed
         if state.is_deployed(src) {
-            super::undeploy::undeploy_single(src, &staged_dir, &target_path, remove_file, &mut state)?;
+            super::undeploy::undeploy_single(
+                src,
+                &staged_dir,
+                &target_path,
+                remove_file,
+                &mut state,
+            )?;
         }
 
         // 2. Remove config entry
@@ -95,9 +101,9 @@ pub fn run(
             debug!("Removed staged: {}", staged_path.display());
         }
 
-        state.save().with_context(|| {
-            format!("Failed to save state after unimporting {}", src)
-        })?;
+        state
+            .save()
+            .with_context(|| format!("Failed to save state after unimporting {}", src))?;
 
         info!("Unimported {}", src);
     }
@@ -118,23 +124,25 @@ fn remove_config_entry(config_path: &Path, src: &str) -> Result<()> {
         .with_context(|| "Failed to parse config for editing")?;
 
     if let Some(files) = doc.get_mut("files")
-        && let Some(array) = files.as_array_of_tables_mut() {
-            // Find and remove the entry matching src
-            let mut index_to_remove = None;
-            for (i, table) in array.iter().enumerate() {
-                if let Some(entry_src) = table.get("src").and_then(|v| v.as_str())
-                    && entry_src == src {
-                        index_to_remove = Some(i);
-                        break;
-                    }
-            }
-
-            if let Some(idx) = index_to_remove {
-                array.remove(idx);
-            } else {
-                warn!("Config entry not found for src: {}", src);
+        && let Some(array) = files.as_array_of_tables_mut()
+    {
+        // Find and remove the entry matching src
+        let mut index_to_remove = None;
+        for (i, table) in array.iter().enumerate() {
+            if let Some(entry_src) = table.get("src").and_then(|v| v.as_str())
+                && entry_src == src
+            {
+                index_to_remove = Some(i);
+                break;
             }
         }
+
+        if let Some(idx) = index_to_remove {
+            array.remove(idx);
+        } else {
+            warn!("Config entry not found for src: {}", src);
+        }
+    }
 
     std::fs::write(config_path, doc.to_string())
         .with_context(|| format!("Failed to write config: {}", config_path.display()))?;

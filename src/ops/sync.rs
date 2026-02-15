@@ -112,7 +112,10 @@ fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> 
 
     // No changes to sync
     if generated == staged {
-        debug!("{}: generated and staged are identical, skipping", entry.src);
+        debug!(
+            "{}: generated and staged are identical, skipping",
+            entry.src
+        );
         return Ok(false);
     }
 
@@ -149,13 +152,21 @@ fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> 
     let ops: Vec<DiffOp> = diff.ops().to_vec();
 
     // Count non-equal hunks for display numbering
-    let total_hunks = ops.iter().filter(|op| !matches!(op, DiffOp::Equal { .. })).count();
+    let total_hunks = ops
+        .iter()
+        .filter(|op| !matches!(op, DiffOp::Equal { .. }))
+        .count();
 
     if total_hunks == 0 {
         return Ok(false);
     }
 
-    println!("\n=== {} ({} hunk{}) ===", entry.src, total_hunks, if total_hunks == 1 { "" } else { "s" });
+    println!(
+        "\n=== {} ({} hunk{}) ===",
+        entry.src,
+        total_hunks,
+        if total_hunks == 1 { "" } else { "s" }
+    );
 
     // Build output from source lines, selectively applying staged changes
     let mut output_lines: Vec<&str> = Vec::new();
@@ -170,7 +181,9 @@ fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> 
                     output_lines.push(source_line)
                 }
             }
-            DiffOp::Insert { new_index, new_len, .. } => {
+            DiffOp::Insert {
+                new_index, new_len, ..
+            } => {
                 hunk_num += 1;
                 let staged_range = &staged_lines[new_index..new_index + new_len];
 
@@ -196,14 +209,22 @@ fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> 
                     // Skip = don't add anything (lines didn't exist in source)
                 }
             }
-            DiffOp::Delete { old_index, old_len, .. } => {
+            DiffOp::Delete {
+                old_index, old_len, ..
+            } => {
                 hunk_num += 1;
                 let source_range: Vec<&str> = if entry.template {
-                    (old_index..old_index + old_len).map(|i| source_lines[i]).collect()
+                    (old_index..old_index + old_len)
+                        .map(|i| source_lines[i])
+                        .collect()
                 } else {
-                    (old_index..old_index + old_len).map(|i| source_lines[i]).collect()
+                    (old_index..old_index + old_len)
+                        .map(|i| source_lines[i])
+                        .collect()
                 };
-                let gen_range: Vec<&str> = (old_index..old_index + old_len).map(|i| generated_lines[i]).collect();
+                let gen_range: Vec<&str> = (old_index..old_index + old_len)
+                    .map(|i| generated_lines[i])
+                    .collect();
 
                 let classification = classify_hunk(
                     &source_range,
@@ -218,12 +239,21 @@ fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> 
 
                 if dry_run {
                     print_delete_hunk(
-                        &entry.src, hunk_num, total_hunks,
-                        old_index, old_len, &source_range, &classification,
+                        &entry.src,
+                        hunk_num,
+                        total_hunks,
+                        old_index,
+                        old_len,
+                        &source_range,
+                        &classification,
                     );
                     println!(
                         "  [dry-run] Would prompt: default {}",
-                        if classification.is_safe { "Apply" } else { "Skip" }
+                        if classification.is_safe {
+                            "Apply"
+                        } else {
+                            "Skip"
+                        }
                     );
                     // Preserve source lines in dry-run
                     for line in &source_range {
@@ -231,8 +261,13 @@ fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> 
                     }
                 } else {
                     print_delete_hunk(
-                        &entry.src, hunk_num, total_hunks,
-                        old_index, old_len, &source_range, &classification,
+                        &entry.src,
+                        hunk_num,
+                        total_hunks,
+                        old_index,
+                        old_len,
+                        &source_range,
+                        &classification,
                     );
 
                     let selection = Select::new()
@@ -252,14 +287,25 @@ fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> 
                     }
                 }
             }
-            DiffOp::Replace { old_index, old_len, new_index, new_len } => {
+            DiffOp::Replace {
+                old_index,
+                old_len,
+                new_index,
+                new_len,
+            } => {
                 hunk_num += 1;
                 let source_range: Vec<&str> = if entry.template {
-                    (old_index..old_index + old_len).map(|i| source_lines[i]).collect()
+                    (old_index..old_index + old_len)
+                        .map(|i| source_lines[i])
+                        .collect()
                 } else {
-                    (old_index..old_index + old_len).map(|i| source_lines[i]).collect()
+                    (old_index..old_index + old_len)
+                        .map(|i| source_lines[i])
+                        .collect()
                 };
-                let gen_range: Vec<&str> = (old_index..old_index + old_len).map(|i| generated_lines[i]).collect();
+                let gen_range: Vec<&str> = (old_index..old_index + old_len)
+                    .map(|i| generated_lines[i])
+                    .collect();
                 let staged_range = &staged_lines[new_index..new_index + new_len];
 
                 let classification = classify_hunk(
@@ -275,12 +321,22 @@ fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> 
 
                 if dry_run {
                     print_replace_hunk(
-                        &entry.src, hunk_num, total_hunks,
-                        old_index, old_len, &source_range, staged_range, &classification,
+                        &entry.src,
+                        hunk_num,
+                        total_hunks,
+                        old_index,
+                        old_len,
+                        &source_range,
+                        staged_range,
+                        &classification,
                     );
                     println!(
                         "  [dry-run] Would prompt: default {}",
-                        if classification.is_safe { "Apply" } else { "Skip" }
+                        if classification.is_safe {
+                            "Apply"
+                        } else {
+                            "Skip"
+                        }
                     );
                     // Preserve source lines in dry-run
                     for line in &source_range {
@@ -288,8 +344,14 @@ fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> 
                     }
                 } else {
                     print_replace_hunk(
-                        &entry.src, hunk_num, total_hunks,
-                        old_index, old_len, &source_range, staged_range, &classification,
+                        &entry.src,
+                        hunk_num,
+                        total_hunks,
+                        old_index,
+                        old_len,
+                        &source_range,
+                        staged_range,
+                        &classification,
                     );
 
                     let selection = Select::new()
@@ -329,8 +391,11 @@ fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> 
         .with_context(|| format!("Failed to read metadata: {}", source_path.display()))?;
     std::fs::write(&source_path, &output)
         .with_context(|| format!("Failed to write source: {}", source_path.display()))?;
-    std::fs::set_permissions(&source_path, std::fs::Permissions::from_mode(metadata.permissions().mode()))
-        .with_context(|| format!("Failed to set permissions: {}", source_path.display()))?;
+    std::fs::set_permissions(
+        &source_path,
+        std::fs::Permissions::from_mode(metadata.permissions().mode()),
+    )
+    .with_context(|| format!("Failed to set permissions: {}", source_path.display()))?;
 
     info!("Updated source: {}", entry.src);
     Ok(true)
@@ -351,8 +416,8 @@ fn classify_hunk(
 ) -> HunkClassification {
     let source_matches_generated = source_range == gen_range;
 
-    let has_template = is_template
-        && (old_index..old_index + old_len).any(|i| template_affected.contains(&i));
+    let has_template =
+        is_template && (old_index..old_index + old_len).any(|i| template_affected.contains(&i));
 
     if source_matches_generated && !has_template {
         HunkClassification {
@@ -362,12 +427,16 @@ fn classify_hunk(
     } else if has_template {
         HunkClassification {
             is_safe: false,
-            annotation: Some("(!) Template syntax \u{2014} applying would replace template expressions"),
+            annotation: Some(
+                "(!) Template syntax \u{2014} applying would replace template expressions",
+            ),
         }
     } else {
         HunkClassification {
             is_safe: false,
-            annotation: Some("(!) Source was independently edited \u{2014} applying would overwrite your changes"),
+            annotation: Some(
+                "(!) Source was independently edited \u{2014} applying would overwrite your changes",
+            ),
         }
     }
 }
@@ -388,14 +457,21 @@ fn print_insert_hunk(src: &str, hunk_num: usize, total: usize, new_index: usize,
 }
 
 fn print_delete_hunk(
-    src: &str, hunk_num: usize, total: usize,
-    old_index: usize, old_len: usize,
+    src: &str,
+    hunk_num: usize,
+    total: usize,
+    old_index: usize,
+    old_len: usize,
     source_range: &[&str],
     classification: &HunkClassification,
 ) {
     println!(
         "\n--- {}: hunk {}/{} (lines {}-{}) ---",
-        src, hunk_num, total, old_index + 1, old_index + old_len
+        src,
+        hunk_num,
+        total,
+        old_index + 1,
+        old_index + old_len
     );
     println!("\n  Source (would be deleted):");
     for line in source_range {
@@ -412,15 +488,27 @@ fn print_delete_hunk(
 
 #[allow(clippy::too_many_arguments)]
 fn print_replace_hunk(
-    src: &str, hunk_num: usize, total: usize,
-    old_index: usize, old_len: usize,
-    source_range: &[&str], staged: &[&str],
+    src: &str,
+    hunk_num: usize,
+    total: usize,
+    old_index: usize,
+    old_len: usize,
+    source_range: &[&str],
+    staged: &[&str],
     classification: &HunkClassification,
 ) {
-    let label = if classification.is_safe { "Current" } else { "Source" };
+    let label = if classification.is_safe {
+        "Current"
+    } else {
+        "Source"
+    };
     println!(
         "\n--- {}: hunk {}/{} (lines {}-{}) ---",
-        src, hunk_num, total, old_index + 1, old_index + old_len
+        src,
+        hunk_num,
+        total,
+        old_index + 1,
+        old_index + old_len
     );
     println!("\n  {}:", label);
     for line in source_range {

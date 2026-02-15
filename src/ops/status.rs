@@ -4,7 +4,7 @@
 //! and deployed versions exist and are in sync. Supports filtering by
 //! deployment state and diff presence.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::collections::HashMap;
 use std::path::Path;
 use tracing::info;
@@ -67,16 +67,12 @@ pub fn run(config: &Config, files: Option<&[String]>, filters: StatusFilters) ->
 
         let deployed = state.is_deployed(src) && is_janus_symlink(&target_path, &staged_path);
 
-        let detail = compute_detail(
-            &source_path,
-            &generated_path,
-            &staged_path,
-            deployed,
-        );
+        let detail = compute_detail(&source_path, &generated_path, &staged_path, deployed);
 
         let changed_lines = count_changed_lines(&generated_path, &staged_path);
 
-        let has_diff = detail.contains("diff") || detail.contains("missing") || detail.contains("not yet");
+        let has_diff =
+            detail.contains("diff") || detail.contains("missing") || detail.contains("not yet");
 
         // Apply filters
         if filters.deployed && !deployed {
@@ -106,7 +102,11 @@ pub fn run(config: &Config, files: Option<&[String]>, filters: StatusFilters) ->
     let max_src_len = statuses.iter().map(|s| s.src.len()).max().unwrap_or(0);
 
     for status in &statuses {
-        let state_str = if status.deployed { "deployed  " } else { "undeployed" };
+        let state_str = if status.deployed {
+            "deployed  "
+        } else {
+            "undeployed"
+        };
 
         println!(
             "  {:<width$}  {}  ({})",
@@ -123,7 +123,11 @@ pub fn run(config: &Config, files: Option<&[String]>, filters: StatusFilters) ->
         if !summary.is_empty() {
             println!();
             println!("Filesets needing sync:");
-            let max_name_len = summary.iter().map(|(name, _, _)| name.len()).max().unwrap_or(0);
+            let max_name_len = summary
+                .iter()
+                .map(|(name, _, _)| name.len())
+                .max()
+                .unwrap_or(0);
             for (name, files_changed, total_lines) in &summary {
                 println!(
                     "  {:<width$}  {} file(s) changed, {} line(s)",
@@ -222,7 +226,9 @@ fn count_changed_lines(generated_path: &Path, staged_path: &Path) -> usize {
             similar::DiffOp::Equal { .. } => 0,
             similar::DiffOp::Delete { old_len, .. } => old_len,
             similar::DiffOp::Insert { new_len, .. } => new_len,
-            similar::DiffOp::Replace { old_len, new_len, .. } => old_len + new_len,
+            similar::DiffOp::Replace {
+                old_len, new_len, ..
+            } => old_len + new_len,
         })
         .sum()
 }
@@ -231,10 +237,7 @@ fn count_changed_lines(generated_path: &Path, staged_path: &Path) -> usize {
 ///
 /// Returns `(fileset_name, files_changed, total_changed_lines)` sorted by
 /// total changed lines descending.
-fn fileset_sync_summary(
-    config: &Config,
-    statuses: &[FileStatus],
-) -> Vec<(String, usize, usize)> {
+fn fileset_sync_summary(config: &Config, statuses: &[FileStatus]) -> Vec<(String, usize, usize)> {
     let mut summary: HashMap<&str, (usize, usize)> = HashMap::new();
 
     for (name, fileset) in &config.filesets {

@@ -1,6 +1,6 @@
 //! 1Password CLI (`op read`) secret resolution.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::process::Command;
 
 /// Resolve a 1Password reference by calling `op read <reference>`.

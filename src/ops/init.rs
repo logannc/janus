@@ -16,20 +16,42 @@ pub fn run(dotfiles_dir: &str, dry_run: bool) -> Result<()> {
     let dotfiles_path = expand_tilde(dotfiles_dir);
     let config_path = crate::config::Config::default_path();
 
-    info!("Initializing dotfiles directory at {}", dotfiles_path.display());
+    info!(
+        "Initializing dotfiles directory at {}",
+        dotfiles_path.display()
+    );
 
     if dry_run {
-        info!("[dry-run] Would create directory: {}", dotfiles_path.display());
-        info!("[dry-run] Would create directory: {}", dotfiles_path.join(".generated").display());
-        info!("[dry-run] Would create directory: {}", dotfiles_path.join(".staged").display());
-        info!("[dry-run] Would create state file: {}", dotfiles_path.join(".janus_state.toml").display());
-        info!("[dry-run] Would create config file: {}", config_path.display());
+        info!(
+            "[dry-run] Would create directory: {}",
+            dotfiles_path.display()
+        );
+        info!(
+            "[dry-run] Would create directory: {}",
+            dotfiles_path.join(".generated").display()
+        );
+        info!(
+            "[dry-run] Would create directory: {}",
+            dotfiles_path.join(".staged").display()
+        );
+        info!(
+            "[dry-run] Would create state file: {}",
+            dotfiles_path.join(".janus_state.toml").display()
+        );
+        info!(
+            "[dry-run] Would create config file: {}",
+            config_path.display()
+        );
         return Ok(());
     }
 
     // Create directories
-    std::fs::create_dir_all(&dotfiles_path)
-        .with_context(|| format!("Failed to create dotfiles directory: {}", dotfiles_path.display()))?;
+    std::fs::create_dir_all(&dotfiles_path).with_context(|| {
+        format!(
+            "Failed to create dotfiles directory: {}",
+            dotfiles_path.display()
+        )
+    })?;
     std::fs::create_dir_all(dotfiles_path.join(".generated"))
         .context("Failed to create .generated directory")?;
     std::fs::create_dir_all(dotfiles_path.join(".staged"))
@@ -46,20 +68,16 @@ pub fn run(dotfiles_dir: &str, dry_run: bool) -> Result<()> {
     // Create state file
     let state_path = dotfiles_path.join(".janus_state.toml");
     if !state_path.exists() {
-        std::fs::write(&state_path, "")
-            .context("Failed to create state file")?;
+        std::fs::write(&state_path, "").context("Failed to create state file")?;
         info!("Created {}", state_path.display());
     }
 
     // Create default config
     if let Some(parent) = config_path.parent() {
-        std::fs::create_dir_all(parent)
-            .context("Failed to create config directory")?;
+        std::fs::create_dir_all(parent).context("Failed to create config directory")?;
     }
     if !config_path.exists() {
-        let default_config = format!(
-            "dotfiles_dir = \"{dotfiles_dir}\"\nvars = [\"vars.toml\"]\n"
-        );
+        let default_config = format!("dotfiles_dir = \"{dotfiles_dir}\"\nvars = [\"vars.toml\"]\n");
         std::fs::write(&config_path, default_config)
             .with_context(|| format!("Failed to create config file: {}", config_path.display()))?;
         info!("Created config at {}", config_path.display());

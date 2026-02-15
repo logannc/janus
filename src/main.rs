@@ -11,7 +11,7 @@ mod paths;
 mod secrets;
 mod state;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
@@ -79,19 +79,36 @@ fn main() -> Result<()> {
             let config = Config::load(&config_path)?;
 
             match command {
-                Command::Generate { files, all, filesets } => {
+                Command::Generate {
+                    files,
+                    all,
+                    filesets,
+                } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
                     ops::generate::run(&config, files.as_deref(), cli.dry_run)?;
                 }
-                Command::Stage { files, all, filesets } => {
+                Command::Stage {
+                    files,
+                    all,
+                    filesets,
+                } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
                     ops::stage::run(&config, files.as_deref(), cli.dry_run)?;
                 }
-                Command::Deploy { files, all, force, filesets } => {
+                Command::Deploy {
+                    files,
+                    all,
+                    force,
+                    filesets,
+                } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
                     ops::deploy::run(&config, files.as_deref(), force, cli.dry_run)?;
                 }
-                Command::Diff { files, all, filesets } => {
+                Command::Diff {
+                    files,
+                    all,
+                    filesets,
+                } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
                     ops::diff::run(&config, files.as_deref())?;
                 }
@@ -105,7 +122,12 @@ fn main() -> Result<()> {
                 } => {
                     ops::import::run(&config, &config_path, &path, all, max_depth, cli.dry_run)?;
                 }
-                Command::Apply { files, all, force, filesets } => {
+                Command::Apply {
+                    files,
+                    all,
+                    force,
+                    filesets,
+                } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
                     ops::apply::run(&config, files.as_deref(), force, cli.dry_run)?;
                 }
@@ -134,15 +156,13 @@ fn main() -> Result<()> {
                         }
                         files
                     };
-                    ops::unimport::run(
-                        &config,
-                        &config_path,
-                        &files,
-                        remove_file,
-                        cli.dry_run,
-                    )?;
+                    ops::unimport::run(&config, &config_path, &files, remove_file, cli.dry_run)?;
                 }
-                Command::Sync { files, all, filesets } => {
+                Command::Sync {
+                    files,
+                    all,
+                    filesets,
+                } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
                     ops::sync::run(&config, files.as_deref(), cli.dry_run)?;
                 }

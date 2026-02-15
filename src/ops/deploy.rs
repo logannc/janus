@@ -106,8 +106,12 @@ fn deploy_symlink(staged_path: &Path, target_path: &Path, force: bool) -> Result
     let temp_path = target_path.with_extension(".janus.tmp");
     // Clean up any stale temp symlink
     if temp_path.exists() || temp_path.is_symlink() {
-        std::fs::remove_file(&temp_path)
-            .with_context(|| format!("Failed to remove stale temp symlink: {}", temp_path.display()))?;
+        std::fs::remove_file(&temp_path).with_context(|| {
+            format!(
+                "Failed to remove stale temp symlink: {}",
+                temp_path.display()
+            )
+        })?;
     }
 
     std::os::unix::fs::symlink(staged_path, &temp_path)
@@ -116,10 +120,7 @@ fn deploy_symlink(staged_path: &Path, target_path: &Path, force: bool) -> Result
     std::fs::rename(&temp_path, target_path).with_context(|| {
         // Clean up temp symlink on failure
         let _ = std::fs::remove_file(&temp_path);
-        format!(
-            "Failed to atomically replace: {}",
-            target_path.display()
-        )
+        format!("Failed to atomically replace: {}", target_path.display())
     })?;
 
     Ok(())
@@ -132,12 +133,17 @@ fn deploy_symlink(staged_path: &Path, target_path: &Path, force: bool) -> Result
 fn deploy_symlink(staged_path: &Path, target_path: &Path, force: bool) -> Result<()> {
     if target_path.exists() || target_path.is_symlink() {
         if is_janus_symlink(target_path, staged_path) {
-            std::fs::remove_file(target_path)
-                .with_context(|| format!("Failed to remove existing symlink: {}", target_path.display()))?;
+            std::fs::remove_file(target_path).with_context(|| {
+                format!(
+                    "Failed to remove existing symlink: {}",
+                    target_path.display()
+                )
+            })?;
         } else if force {
             warn!("Overwriting existing file: {}", target_path.display());
-            std::fs::remove_file(target_path)
-                .with_context(|| format!("Failed to remove existing file: {}", target_path.display()))?;
+            std::fs::remove_file(target_path).with_context(|| {
+                format!("Failed to remove existing file: {}", target_path.display())
+            })?;
         } else {
             let backup_path = backup_path_for(target_path);
             warn!(
@@ -150,8 +156,13 @@ fn deploy_symlink(staged_path: &Path, target_path: &Path, force: bool) -> Result
         }
     }
 
-    std::os::unix::fs::symlink(staged_path, target_path)
-        .with_context(|| format!("Failed to create symlink: {} -> {}", target_path.display(), staged_path.display()))?;
+    std::os::unix::fs::symlink(staged_path, target_path).with_context(|| {
+        format!(
+            "Failed to create symlink: {} -> {}",
+            target_path.display(),
+            staged_path.display()
+        )
+    })?;
 
     Ok(())
 }

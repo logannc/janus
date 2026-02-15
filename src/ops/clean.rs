@@ -8,7 +8,7 @@
 //! Uses error-collection strategy: continues processing remaining files after
 //! individual failures.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
@@ -58,7 +58,10 @@ fn clean_generated(config: &Config, dry_run: bool) -> CleanResult {
     let generated_dir = config.generated_dir();
     if !generated_dir.exists() {
         info!("No .generated/ directory to clean");
-        return CleanResult { count: 0, errors: Vec::new() };
+        return CleanResult {
+            count: 0,
+            errors: Vec::new(),
+        };
     }
 
     let mut count = 0usize;
@@ -85,10 +88,9 @@ fn clean_generated(config: &Config, dry_run: bool) -> CleanResult {
                     errors.push((path.to_path_buf(), e.into()));
                 }
             }
-        } else if entry.file_type().is_dir()
-            && std::fs::remove_dir(path).is_err() {
-                debug!("Keeping non-empty directory: {}", path.display());
-            }
+        } else if entry.file_type().is_dir() && std::fs::remove_dir(path).is_err() {
+            debug!("Keeping non-empty directory: {}", path.display());
+        }
     }
 
     info!("Cleaned {} generated file(s)", count);
@@ -145,7 +147,10 @@ fn clean_orphans(config: &Config, dry_run: bool) -> Result<CleanResult> {
 
     let mut errors = gen_result.errors;
     errors.extend(staged_result.errors);
-    Ok(CleanResult { count: total, errors })
+    Ok(CleanResult {
+        count: total,
+        errors,
+    })
 }
 
 /// Walk a directory, remove files whose relative path isn't in `configured_srcs`
@@ -158,7 +163,10 @@ fn clean_orphans_in_dir(
     dry_run: bool,
 ) -> CleanResult {
     if !dir.exists() {
-        return CleanResult { count: 0, errors: Vec::new() };
+        return CleanResult {
+            count: 0,
+            errors: Vec::new(),
+        };
     }
 
     let mut count = 0usize;
@@ -186,10 +194,7 @@ fn clean_orphans_in_dir(
         }
 
         if !extra_check(&relative) {
-            debug!(
-                "Keeping {} orphan (still deployed): {}",
-                label, relative
-            );
+            debug!("Keeping {} orphan (still deployed): {}", label, relative);
             continue;
         }
 
