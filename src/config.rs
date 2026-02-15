@@ -20,12 +20,28 @@ pub struct Config {
     /// Global template variable files, relative to `dotfiles_dir`.
     #[serde(default)]
     pub vars: Vec<String>,
+    /// Global secret config files, relative to `dotfiles_dir`.
+    #[serde(default)]
+    pub secrets: Vec<String>,
     /// Managed file entries.
     #[serde(default)]
     pub files: Vec<FileEntry>,
     /// Named groups of file patterns for batch operations.
     #[serde(default)]
-    pub filesets: HashMap<String, Vec<String>>,
+    pub filesets: HashMap<String, FilesetEntry>,
+}
+
+/// A named fileset: file patterns with optional vars and secrets overrides.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct FilesetEntry {
+    /// Glob patterns that select files in this set.
+    pub patterns: Vec<String>,
+    /// Variable files applied to files matching this fileset.
+    #[serde(default)]
+    pub vars: Vec<String>,
+    /// Secret config files applied to files matching this fileset.
+    #[serde(default)]
+    pub secrets: Vec<String>,
 }
 
 /// A single managed file entry in the janus config.
@@ -41,6 +57,9 @@ pub struct FileEntry {
     /// Per-file variable files that override globals, relative to `dotfiles_dir`.
     #[serde(default)]
     pub vars: Vec<String>,
+    /// Per-file secret config files that override globals, relative to `dotfiles_dir`.
+    #[serde(default)]
+    pub secrets: Vec<String>,
 }
 
 impl FileEntry {
@@ -96,7 +115,7 @@ impl Config {
         let mut patterns = Vec::new();
         for name in names {
             match self.filesets.get(name) {
-                Some(files) => patterns.extend(files.iter().cloned()),
+                Some(entry) => patterns.extend(entry.patterns.iter().cloned()),
                 None => {
                     if let Some(suggestion) = self.suggest_fileset(name) {
                         bail!("Unknown fileset: {name}. Did you mean: {suggestion}?");
@@ -106,6 +125,24 @@ impl Config {
             }
         }
         Ok(patterns)
+    }
+
+    /// Return all filesets whose patterns match the given source path.
+    ///
+    /// Used by generate to inherit fileset-level vars and secrets.
+    pub fn matching_filesets(&self, src: &str) -> Vec<&FilesetEntry> {
+        self.filesets
+            .values()
+            .filter(|entry| {
+                entry.patterns.iter().any(|pattern| {
+                    if let Ok(glob_pattern) = glob::Pattern::new(pattern) {
+                        glob_pattern.matches(src)
+                    } else {
+                        src == pattern
+                    }
+                })
+            })
+            .collect()
     }
 
     /// Filter file entries by the given file/glob patterns.

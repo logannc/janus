@@ -1,8 +1,8 @@
 //! Render templates and copy source files into `.generated/`.
 //!
 //! For files with `template = true`, renders the source through Tera with
-//! merged global + per-file variables. For non-template files, copies as-is.
-//! Preserves Unix file permissions on all output files.
+//! merged global + per-file variables and secrets. For non-template files,
+//! copies as-is. Preserves Unix file permissions on all output files.
 //!
 //! Uses error-collection strategy: processes all files and reports failures
 //! at the end rather than bailing on the first error.
@@ -15,6 +15,7 @@ use tera::Tera;
 use tracing::{debug, info, trace, warn};
 
 use crate::config::{Config, FileEntry};
+use crate::secrets::{self, SecretEntry, SecretResolver};
 
 /// Load template variables from one or more TOML files in the dotfiles directory.
 ///
@@ -65,11 +66,26 @@ pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<(
     // Load global vars
     let global_vars = load_vars(&dotfiles_dir, &config.vars)?;
 
+    // Parse global secret entries (cheap TOML reads, no op calls yet)
+    let global_secret_entries = secrets::parse_secret_files(&dotfiles_dir, &config.secrets)?;
+
+    // Shared resolver caches op read results across all files
+    let mut resolver = SecretResolver::new();
+
     let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
     let mut succeeded = 0usize;
 
     for entry in &entries {
-        match generate_file(config, entry, &dotfiles_dir, &generated_dir, &global_vars, dry_run) {
+        match generate_file(
+            config,
+            entry,
+            &dotfiles_dir,
+            &generated_dir,
+            &global_vars,
+            &global_secret_entries,
+            &mut resolver,
+            dry_run,
+        ) {
             Ok(()) => succeeded += 1,
             Err(e) => {
                 warn!("Failed to generate {}: {e:#}", entry.src);
@@ -94,11 +110,13 @@ pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<(
 
 /// Generate a single file: render template or copy, then preserve permissions.
 fn generate_file(
-    _config: &Config,
+    config: &Config,
     entry: &FileEntry,
     dotfiles_dir: &Path,
     generated_dir: &Path,
     global_vars: &HashMap<String, toml::Value>,
+    global_secret_entries: &[SecretEntry],
+    resolver: &mut SecretResolver,
     dry_run: bool,
 ) -> Result<()> {
     let src_path = dotfiles_dir.join(&entry.src);
@@ -120,11 +138,47 @@ fn generate_file(
     }
 
     if entry.template {
-        // Merge global vars with file-local vars (file-local wins)
+        // Look up matching filesets for this file
+        let matching_filesets = config.matching_filesets(&entry.src);
+
+        // Build vars: global → fileset → per-file (later wins)
         let mut vars = global_vars.clone();
+        for fileset in &matching_filesets {
+            if !fileset.vars.is_empty() {
+                let fileset_vars = load_vars(dotfiles_dir, &fileset.vars)?;
+                vars.extend(fileset_vars);
+            }
+        }
         if !entry.vars.is_empty() {
             let local_vars = load_vars(dotfiles_dir, &entry.vars)?;
             vars.extend(local_vars);
+        }
+
+        // Build secret entries: global → fileset → per-file
+        let mut secret_entries: Vec<SecretEntry> = global_secret_entries.to_vec();
+        for fileset in &matching_filesets {
+            if !fileset.secrets.is_empty() {
+                let fileset_secrets =
+                    secrets::parse_secret_files(dotfiles_dir, &fileset.secrets)?;
+                secret_entries.extend(fileset_secrets);
+            }
+        }
+        if !entry.secrets.is_empty() {
+            let file_secrets = secrets::parse_secret_files(dotfiles_dir, &entry.secrets)?;
+            secret_entries.extend(file_secrets);
+        }
+
+        // Resolve secrets (lazy - only calls op read for uncached references)
+        let resolved_secrets = if !secret_entries.is_empty() {
+            secrets::resolve_secrets(&secret_entries, resolver)?
+        } else {
+            HashMap::new()
+        };
+
+        // Check for var/secret name collisions
+        if !resolved_secrets.is_empty() {
+            secrets::check_conflicts(&vars, &resolved_secrets)?;
+            vars.extend(resolved_secrets);
         }
 
         let context = vars_to_tera_context(&vars)?;

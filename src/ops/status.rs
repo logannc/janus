@@ -237,12 +237,12 @@ fn fileset_sync_summary(
 ) -> Vec<(String, usize, usize)> {
     let mut summary: HashMap<&str, (usize, usize)> = HashMap::new();
 
-    for (name, patterns) in &config.filesets {
+    for (name, fileset) in &config.filesets {
         for status in statuses {
             if status.changed_lines == 0 {
                 continue;
             }
-            let matches = patterns.iter().any(|pattern| {
+            let matches = fileset.patterns.iter().any(|pattern| {
                 if let Ok(glob_pattern) = glob::Pattern::new(pattern) {
                     glob_pattern.matches(&status.src)
                 } else {

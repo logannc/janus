@@ -8,6 +8,7 @@ mod cli;
 mod config;
 mod ops;
 mod paths;
+mod secrets;
 mod state;
 
 use anyhow::{bail, Result};
