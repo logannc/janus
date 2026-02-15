@@ -175,6 +175,20 @@ pub enum Command {
         filesets: Vec<String>,
     },
 
+    /// Interactively merge staged changes back into source templates
+    Sync {
+        /// Files/globs to sync
+        files: Vec<String>,
+
+        /// Process all configured files
+        #[arg(long)]
+        all: bool,
+
+        /// Filesets to operate on (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        filesets: Vec<String>,
+    },
+
     /// Show pipeline status for managed files
     Status {
         /// Files/globs to check

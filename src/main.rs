@@ -141,6 +141,10 @@ fn main() -> Result<()> {
                         cli.dry_run,
                     )?;
                 }
+                Command::Sync { files, all, filesets } => {
+                    let files = resolve_file_selection(files, all, filesets, &config)?;
+                    ops::sync::run(&config, files.as_deref(), cli.dry_run)?;
+                }
                 Command::Status {
                     files,
                     all,

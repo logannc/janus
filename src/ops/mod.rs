@@ -13,5 +13,6 @@ pub mod import;
 pub mod init;
 pub mod stage;
 pub mod status;
+pub mod sync;
 pub mod undeploy;
 pub mod unimport;
