@@ -95,12 +95,6 @@ pub fn run(
             debug!("Removed staged: {}", staged_path.display());
         }
 
-        // 6. Remove any ignored entry for this target
-        let target_str = crate::paths::collapse_tilde(&target_path);
-        if state.is_ignored(&target_str) {
-            state.remove_ignored(&target_str);
-        }
-
         state.save().with_context(|| {
             format!("Failed to save state after unimporting {}", src)
         })?;
