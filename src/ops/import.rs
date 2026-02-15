@@ -261,7 +261,10 @@ fn append_config_entry(config_path: &Path, src: &str, target: &str) -> Result<()
     if let Some(array) = files.as_array_of_tables_mut() {
         let mut table = toml_edit::Table::new();
         table.insert("src", toml_edit::value(src));
-        table.insert("target", toml_edit::value(target));
+        let default_target = format!("~/.config/{src}");
+        if target != default_target {
+            table.insert("target", toml_edit::value(target));
+        }
         array.push(table);
     } else {
         warn!("Config 'files' is not an array of tables; cannot append entry");
