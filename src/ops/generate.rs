@@ -54,6 +54,7 @@ fn vars_to_tera_context(vars: &HashMap<String, toml::Value>) -> Result<tera::Con
 pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<()> {
     let entries = config.filter_files(files);
     if entries.is_empty() {
+        config.bail_unmatched(files)?;
         info!("No files to generate");
         return Ok(());
     }

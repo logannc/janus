@@ -20,6 +20,7 @@ use crate::config::Config;
 pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<()> {
     let entries = config.filter_files(files);
     if entries.is_empty() {
+        config.bail_unmatched(files)?;
         info!("No files to stage");
         return Ok(());
     }

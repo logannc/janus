@@ -41,7 +41,7 @@ pub fn run(
 
     let entries = config.filter_files(Some(files));
     if entries.is_empty() {
-        anyhow::bail!("No matching files found in config");
+        config.bail_unmatched(Some(files))?;
     }
 
     for entry in &entries {

@@ -536,6 +536,7 @@ dependencies = [
  "glob",
  "serde",
  "similar",
+ "strsim",
  "tera",
  "toml",
  "toml_edit",

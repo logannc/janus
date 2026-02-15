@@ -8,6 +8,7 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use strsim::jaro_winkler;
 
 use crate::paths::expand_tilde;
 
@@ -96,7 +97,12 @@ impl Config {
         for name in names {
             match self.filesets.get(name) {
                 Some(files) => patterns.extend(files.iter().cloned()),
-                None => bail!("Unknown fileset: {name}"),
+                None => {
+                    if let Some(suggestion) = self.suggest_fileset(name) {
+                        bail!("Unknown fileset: {name}. Did you mean: {suggestion}?");
+                    }
+                    bail!("Unknown fileset: {name}");
+                }
             }
         }
         Ok(patterns)
@@ -123,5 +129,67 @@ impl Config {
                 })
             })
             .collect()
+    }
+
+    /// Find the closest matching `entry.src` values for each unmatched user pattern.
+    ///
+    /// Uses Jaro-Winkler similarity with a threshold of 0.8.
+    pub fn suggest_files(&self, patterns: &[String]) -> Vec<String> {
+        const THRESHOLD: f64 = 0.8;
+        let mut suggestions = Vec::new();
+        for pattern in patterns {
+            let mut best: Option<(&str, f64)> = None;
+            for entry in &self.files {
+                let score = jaro_winkler(pattern, &entry.src);
+                if score > THRESHOLD {
+                    if best.is_none() || score > best.unwrap().1 {
+                        best = Some((&entry.src, score));
+                    }
+                }
+            }
+            if let Some((src, _)) = best {
+                if !suggestions.contains(&src.to_string()) {
+                    suggestions.push(src.to_string());
+                }
+            }
+        }
+        suggestions
+    }
+
+    /// Find the closest matching fileset name for a given input.
+    ///
+    /// Uses Jaro-Winkler similarity with a threshold of 0.8.
+    pub fn suggest_fileset(&self, name: &str) -> Option<String> {
+        const THRESHOLD: f64 = 0.8;
+        let mut best: Option<(&str, f64)> = None;
+        for key in self.filesets.keys() {
+            let score = jaro_winkler(name, key);
+            if score > THRESHOLD {
+                if best.is_none() || score > best.unwrap().1 {
+                    best = Some((key, score));
+                }
+            }
+        }
+        best.map(|(k, _)| k.to_string())
+    }
+
+    /// Bail with fuzzy-match suggestions when explicit patterns matched no files.
+    ///
+    /// When `patterns` is `None` (`--all`), returns `Ok(())` — the caller handles
+    /// the info log for "no configured files". When `Some`, bails with suggestions
+    /// if any are close enough, or a plain "no matching files" error otherwise.
+    pub fn bail_unmatched(&self, patterns: Option<&[String]>) -> Result<()> {
+        let Some(patterns) = patterns else {
+            return Ok(());
+        };
+        let suggestions = self.suggest_files(patterns);
+        if suggestions.is_empty() {
+            bail!("No matching files found in config");
+        } else {
+            bail!(
+                "No matching files found in config. Did you mean: {}?",
+                suggestions.join(", ")
+            );
+        }
     }
 }
