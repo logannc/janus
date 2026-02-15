@@ -26,6 +26,42 @@ fn is_janus_symlink(target: &Path, expected_staged: &Path) -> bool {
     }
 }
 
+/// Undeploy a single file's symlink. Verifies it's a janus symlink pointing to
+/// the expected staged path, then either removes the symlink or replaces it with
+/// a regular file copy.
+///
+/// Updates `state` to mark the file as no longer deployed. Does NOT save state.
+///
+/// Returns `Ok(true)` if undeployed, `Ok(false)` if skipped (not a janus symlink).
+pub fn undeploy_single(
+    src: &str,
+    staged_dir: &Path,
+    target_path: &Path,
+    remove_file: bool,
+    state: &mut State,
+) -> Result<bool> {
+    let staged_path = staged_dir.join(src);
+
+    if !is_janus_symlink(target_path, &staged_path) {
+        warn!(
+            "Target is not a janus symlink, skipping: {}",
+            target_path.display()
+        );
+        return Ok(false);
+    }
+
+    if remove_file {
+        std::fs::remove_file(target_path).with_context(|| {
+            format!("Failed to remove symlink: {}", target_path.display())
+        })?;
+    } else {
+        undeploy_with_copy(&staged_path, target_path)?;
+    }
+
+    state.remove_deployed(src);
+    Ok(true)
+}
+
 /// Undeploy files by removing their symlinks.
 ///
 /// Default behavior copies the staged file to the target so the application
@@ -54,16 +90,7 @@ pub fn run(
             continue;
         }
 
-        let staged_path = staged_dir.join(&entry.src);
         let target_path = expand_tilde(&entry.target());
-
-        if !is_janus_symlink(&target_path, &staged_path) {
-            warn!(
-                "Target is not a janus symlink, skipping: {}",
-                target_path.display()
-            );
-            continue;
-        }
 
         if dry_run {
             if remove_file {
@@ -83,17 +110,10 @@ pub fn run(
             continue;
         }
 
-        if remove_file {
-            // Just remove the symlink
-            std::fs::remove_file(&target_path).with_context(|| {
-                format!("Failed to remove symlink: {}", target_path.display())
-            })?;
-        } else {
-            // Copy staged file to target, replacing the symlink
-            undeploy_with_copy(&staged_path, &target_path)?;
+        if !undeploy_single(&entry.src, &staged_dir, &target_path, remove_file, &mut state)? {
+            continue;
         }
 
-        state.remove_deployed(&entry.src);
         state.save_with_recovery(RecoveryInfo {
             situation: vec![format!(
                 "{} has been undeployed from {}",

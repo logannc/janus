@@ -55,7 +55,7 @@ pub fn run(
 
         // 1. Undeploy if currently deployed
         if state.is_deployed(src) {
-            undeploy_single(src, &staged_dir, &target_path, remove_file, &mut state)?;
+            super::undeploy::undeploy_single(src, &staged_dir, &target_path, remove_file, &mut state)?;
         }
 
         // 2. Remove config entry
@@ -107,83 +107,6 @@ pub fn run(
 
         info!("Unimported {}", src);
     }
-
-    Ok(())
-}
-
-/// Undeploy a single file as part of unimport. Handles symlink verification
-/// and copies staged content to target when `remove_file` is false.
-fn undeploy_single(
-    src: &str,
-    staged_dir: &Path,
-    target_path: &Path,
-    remove_file: bool,
-    state: &mut State,
-) -> Result<()> {
-    let staged_path = staged_dir.join(src);
-
-    // Check if target is a janus symlink
-    if target_path.is_symlink() {
-        if let Ok(link_dest) = std::fs::read_link(target_path) {
-            if link_dest == staged_path {
-                if remove_file {
-                    std::fs::remove_file(target_path).with_context(|| {
-                        format!("Failed to remove symlink: {}", target_path.display())
-                    })?;
-                } else {
-                    // Copy staged to target, replacing symlink
-                    undeploy_with_copy(&staged_path, target_path)?;
-                }
-            } else {
-                warn!(
-                    "Target is not a janus symlink, skipping undeploy: {}",
-                    target_path.display()
-                );
-            }
-        }
-    }
-
-    state.remove_deployed(src);
-    Ok(())
-}
-
-/// Replace a symlink with a regular file copy, atomically (temp + rename).
-#[cfg(feature = "atomic-deploy")]
-fn undeploy_with_copy(staged_path: &Path, target_path: &Path) -> Result<()> {
-    let temp_path = target_path.with_extension(".janus.tmp");
-    if temp_path.exists() || temp_path.is_symlink() {
-        std::fs::remove_file(&temp_path)
-            .with_context(|| format!("Failed to remove stale temp file: {}", temp_path.display()))?;
-    }
-
-    std::fs::copy(staged_path, &temp_path).with_context(|| {
-        format!("Failed to copy staged file to temp: {}", temp_path.display())
-    })?;
-
-    std::fs::rename(&temp_path, target_path).with_context(|| {
-        let _ = std::fs::remove_file(&temp_path);
-        format!(
-            "Failed to atomically replace symlink: {}",
-            target_path.display()
-        )
-    })?;
-
-    Ok(())
-}
-
-/// Replace a symlink with a regular file copy (non-atomic fallback).
-#[cfg(not(feature = "atomic-deploy"))]
-fn undeploy_with_copy(staged_path: &Path, target_path: &Path) -> Result<()> {
-    std::fs::remove_file(target_path).with_context(|| {
-        format!("Failed to remove symlink: {}", target_path.display())
-    })?;
-
-    std::fs::copy(staged_path, target_path).with_context(|| {
-        format!(
-            "Failed to copy staged file to target: {}",
-            target_path.display()
-        )
-    })?;
 
     Ok(())
 }
