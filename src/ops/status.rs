@@ -22,19 +22,12 @@ pub struct StatusFilters {
     pub undeployed: bool,
 }
 
-/// Whether a file is currently deployed as a janus symlink.
-#[derive(PartialEq)]
-enum DeployState {
-    Deployed,
-    Undeployed,
-}
-
 /// Computed status for a single managed file.
 struct FileStatus {
     /// Relative source path (e.g. `hypr/hypr.conf`).
     src: String,
     /// Whether the file is currently deployed.
-    deploy_state: DeployState,
+    deployed: bool,
     /// Human-readable detail string (e.g. "up to date", "source -> generated diff").
     detail: String,
 }
@@ -68,28 +61,22 @@ pub fn run(config: &Config, files: Option<&[String]>, filters: StatusFilters) ->
         let staged_path = staged_dir.join(src);
         let target_path = expand_tilde(&entry.target());
 
-        let is_deployed = state.is_deployed(src) && is_janus_symlink(&target_path, &staged_path);
-
-        let deploy_state = if is_deployed {
-            DeployState::Deployed
-        } else {
-            DeployState::Undeployed
-        };
+        let deployed = state.is_deployed(src) && is_janus_symlink(&target_path, &staged_path);
 
         let detail = compute_detail(
             &source_path,
             &generated_path,
             &staged_path,
-            is_deployed,
+            deployed,
         );
 
         let has_diff = detail.contains("diff") || detail.contains("missing") || detail.contains("not yet");
 
         // Apply filters
-        if filters.deployed && deploy_state != DeployState::Deployed {
+        if filters.deployed && !deployed {
             continue;
         }
-        if filters.undeployed && deploy_state != DeployState::Undeployed {
+        if filters.undeployed && deployed {
             continue;
         }
         if filters.only_diffs && !has_diff {
@@ -98,7 +85,7 @@ pub fn run(config: &Config, files: Option<&[String]>, filters: StatusFilters) ->
 
         statuses.push(FileStatus {
             src: src.clone(),
-            deploy_state,
+            deployed,
             detail,
         });
     }
@@ -112,10 +99,7 @@ pub fn run(config: &Config, files: Option<&[String]>, filters: StatusFilters) ->
     let max_src_len = statuses.iter().map(|s| s.src.len()).max().unwrap_or(0);
 
     for status in &statuses {
-        let state_str = match status.deploy_state {
-            DeployState::Deployed => "deployed  ",
-            DeployState::Undeployed => "undeployed",
-        };
+        let state_str = if status.deployed { "deployed  " } else { "undeployed" };
 
         println!(
             "  {:<width$}  {}  ({})",
