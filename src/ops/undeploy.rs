@@ -1,3 +1,12 @@
+//! Remove deployed symlinks, optionally leaving a regular file at the target.
+//!
+//! By default, copies the staged file to the target location before removing
+//! the symlink, so the application keeps a working config. With `--remove-file`,
+//! simply deletes the symlink.
+//!
+//! Uses fail-fast strategy with state saved after each file, consistent with
+//! deploy behavior.
+
 use anyhow::{Context, Result};
 use std::path::Path;
 use tracing::{info, warn};
@@ -6,6 +15,7 @@ use crate::config::Config;
 use crate::paths::expand_tilde;
 use crate::state::{RecoveryInfo, State};
 
+/// Check if `target` is a symlink pointing to `expected_staged`.
 fn is_janus_symlink(target: &Path, expected_staged: &Path) -> bool {
     if !target.is_symlink() {
         return false;
@@ -16,6 +26,11 @@ fn is_janus_symlink(target: &Path, expected_staged: &Path) -> bool {
     }
 }
 
+/// Undeploy files by removing their symlinks.
+///
+/// Default behavior copies the staged file to the target so the application
+/// keeps a working config. `remove_file = true` just deletes the symlink.
+/// Skips files that aren't deployed or whose target isn't a janus symlink.
 pub fn run(
     config: &Config,
     files: Option<&[String]>,
@@ -111,9 +126,12 @@ pub fn run(
     Ok(())
 }
 
+/// Replace a symlink with a regular file copy, atomically.
+///
+/// Copies the staged file to a temp path, then renames over the symlink
+/// so there's never a moment where the target is missing.
 #[cfg(feature = "atomic-deploy")]
 fn undeploy_with_copy(staged_path: &Path, target_path: &Path) -> Result<()> {
-    // Atomic: copy staged to temp, rename over symlink
     let temp_path = target_path.with_extension(".janus.tmp");
     if temp_path.exists() || temp_path.is_symlink() {
         std::fs::remove_file(&temp_path)
@@ -138,6 +156,9 @@ fn undeploy_with_copy(staged_path: &Path, target_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Replace a symlink with a regular file copy (non-atomic fallback).
+///
+/// Removes the symlink first, then copies. Brief window where the file is missing.
 #[cfg(not(feature = "atomic-deploy"))]
 fn undeploy_with_copy(staged_path: &Path, target_path: &Path) -> Result<()> {
     std::fs::remove_file(target_path).with_context(|| {

@@ -1,8 +1,17 @@
+//! Compound command: run generate → stage → deploy in one shot.
+//!
+//! Bails between steps if any step fails — won't deploy if generation or
+//! staging produced errors.
+
 use anyhow::Result;
 use tracing::info;
 
 use crate::config::Config;
 
+/// Run the full forward pipeline: generate, stage, then deploy.
+///
+/// If any step fails, subsequent steps are skipped. The `force` and `dry_run`
+/// flags are passed through to each step.
 pub fn run(config: &Config, files: Option<&[String]>, force: bool, dry_run: bool) -> Result<()> {
     info!("Running generate...");
     crate::ops::generate::run(config, files, dry_run)?;

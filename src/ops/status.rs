@@ -1,3 +1,9 @@
+//! Read-only overview of each managed file's state across the pipeline.
+//!
+//! For each configured file, checks whether the source, generated, staged,
+//! and deployed versions exist and are in sync. Supports filtering by
+//! deployment state and diff presence.
+
 use anyhow::{bail, Result};
 use std::path::Path;
 use tracing::info;
@@ -6,24 +12,37 @@ use crate::config::Config;
 use crate::paths::expand_tilde;
 use crate::state::State;
 
+/// Filtering options for the status display.
 pub struct StatusFilters {
+    /// Only show files where source != generated or generated != staged.
     pub only_diffs: bool,
+    /// Only show files that are currently deployed.
     pub deployed: bool,
+    /// Only show files that are NOT currently deployed.
     pub undeployed: bool,
 }
 
+/// Whether a file is currently deployed as a janus symlink.
 #[derive(PartialEq)]
 enum DeployState {
     Deployed,
     Undeployed,
 }
 
+/// Computed status for a single managed file.
 struct FileStatus {
+    /// Relative source path (e.g. `hypr/hypr.conf`).
     src: String,
+    /// Whether the file is currently deployed.
     deploy_state: DeployState,
+    /// Human-readable detail string (e.g. "up to date", "source -> generated diff").
     detail: String,
 }
 
+/// Display pipeline status for the given files, applying optional filters.
+///
+/// `--deployed` and `--undeployed` are mutually exclusive. `--only-diffs`
+/// can be combined with either.
 pub fn run(config: &Config, files: Option<&[String]>, filters: StatusFilters) -> Result<()> {
     if filters.deployed && filters.undeployed {
         bail!("Cannot specify both --deployed and --undeployed");
@@ -110,6 +129,10 @@ pub fn run(config: &Config, files: Option<&[String]>, filters: StatusFilters) ->
     Ok(())
 }
 
+/// Compute a human-readable detail string describing the file's pipeline state.
+///
+/// Checks existence and content equality at each stage: source → generated → staged.
+/// Returns descriptions like "up to date", "not yet generated", "source -> generated diff".
 fn compute_detail(
     source_path: &Path,
     generated_path: &Path,
@@ -158,6 +181,7 @@ fn compute_detail(
     }
 }
 
+/// Compare two files by content. Returns false if either file can't be read.
 fn files_match(a: &Path, b: &Path) -> bool {
     let Ok(content_a) = std::fs::read(a) else {
         return false;
@@ -168,6 +192,7 @@ fn files_match(a: &Path, b: &Path) -> bool {
     content_a == content_b
 }
 
+/// Check if `target` is a symlink pointing to `expected_staged`.
 fn is_janus_symlink(target: &Path, expected_staged: &Path) -> bool {
     if !target.is_symlink() {
         return false;

@@ -1,3 +1,9 @@
+//! Operations that implement janus commands.
+//!
+//! Each submodule corresponds to a CLI subcommand and exposes a `run()` function.
+//! The forward pipeline is `generate` → `stage` → `deploy` (or `apply` as a
+//! compound shortcut). Reverse operations are `undeploy`, `unimport`, and `clean`.
+
 pub mod apply;
 pub mod clean;
 pub mod deploy;

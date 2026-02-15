@@ -1,3 +1,12 @@
+//! Full reversal of import: undeploy, remove config entry, and clean up all
+//! copies of a file (source, generated, staged).
+//!
+//! By default, leaves a regular file at the target path (safety by default).
+//! With `--remove-file`, the target is deleted entirely.
+//!
+//! Intentionally has no `--all` flag — unimporting everything is too destructive.
+//! Requires an explicit file list.
+
 use anyhow::{Context, Result};
 use std::path::Path;
 use tracing::{debug, info, warn};
@@ -6,6 +15,14 @@ use crate::config::Config;
 use crate::paths::expand_tilde;
 use crate::state::State;
 
+/// Unimport files: undeploy, remove config entry, delete source/generated/staged copies.
+///
+/// For each matched file:
+/// 1. Undeploy if currently deployed (respects `remove_file` flag)
+/// 2. Remove the `[[files]]` config entry via `toml_edit`
+/// 3. Delete source, generated, and staged files
+/// 4. Remove any corresponding ignored entry from state
+/// 5. Save state
 pub fn run(
     config: &Config,
     config_path: &Path,
@@ -94,6 +111,8 @@ pub fn run(
     Ok(())
 }
 
+/// Undeploy a single file as part of unimport. Handles symlink verification
+/// and copies staged content to target when `remove_file` is false.
 fn undeploy_single(
     src: &str,
     staged_dir: &Path,
@@ -128,6 +147,7 @@ fn undeploy_single(
     Ok(())
 }
 
+/// Replace a symlink with a regular file copy, atomically (temp + rename).
 #[cfg(feature = "atomic-deploy")]
 fn undeploy_with_copy(staged_path: &Path, target_path: &Path) -> Result<()> {
     let temp_path = target_path.with_extension(".janus.tmp");
@@ -151,6 +171,7 @@ fn undeploy_with_copy(staged_path: &Path, target_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Replace a symlink with a regular file copy (non-atomic fallback).
 #[cfg(not(feature = "atomic-deploy"))]
 fn undeploy_with_copy(staged_path: &Path, target_path: &Path) -> Result<()> {
     std::fs::remove_file(target_path).with_context(|| {
@@ -167,6 +188,10 @@ fn undeploy_with_copy(staged_path: &Path, target_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Remove the `[[files]]` entry matching `src` from the config file.
+///
+/// Uses `toml_edit` to preserve formatting and comments in the config.
+/// Warns (but doesn't error) if no matching entry is found.
 fn remove_config_entry(config_path: &Path, src: &str) -> Result<()> {
     let contents = std::fs::read_to_string(config_path)
         .with_context(|| format!("Failed to read config: {}", config_path.display()))?;

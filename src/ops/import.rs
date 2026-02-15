@@ -1,3 +1,12 @@
+//! Import existing config files into janus management.
+//!
+//! Takes a file or directory path, walks it (with configurable depth), and for
+//! each file: prompts the user (Import/Ignore/Skip), copies it into the dotfiles
+//! directory, adds a `[[files]]` entry to the config, and runs the full forward
+//! pipeline (generate → stage → deploy).
+//!
+//! Uses fail-fast strategy since each file mutates config, state, and the filesystem.
+
 use anyhow::{Context, Result};
 use dialoguer::Select;
 use std::collections::HashSet;
@@ -10,6 +19,10 @@ use crate::config::Config;
 use crate::paths::{collapse_tilde, expand_tilde};
 use crate::state::{RecoveryInfo, State};
 
+/// Import files from the given path into janus management.
+///
+/// If `import_all` is true, skips interactive prompts and imports everything.
+/// Each imported file is immediately deployed (generate → stage → deploy).
 pub fn run(
     config: &Config,
     config_path: &Path,
@@ -115,6 +128,7 @@ pub fn run(
     Ok(())
 }
 
+/// Import a single file: copy to dotfiles dir, add config entry, run pipeline.
 fn import_file(
     file_path: &Path,
     target_str: &str,
@@ -186,6 +200,12 @@ fn import_file(
     Ok(())
 }
 
+/// Determine the relative destination path within the dotfiles directory.
+///
+/// Resolution order:
+/// 1. Files under `~/.config/` → strip that prefix (e.g. `~/.config/hypr/hypr.conf` → `hypr/hypr.conf`)
+/// 2. Files under `~/` → strip home + leading dot (e.g. `~/.bashrc` → `bashrc`)
+/// 3. Files elsewhere → flatten parent with underscores (e.g. `/etc/systemd/system/foo.service` → `etc_systemd_system/foo.service`)
 fn determine_dest_path(file_path: &Path) -> Result<String> {
     let config_dir = dirs::config_dir().unwrap_or_else(|| expand_tilde("~/.config"));
 
@@ -224,6 +244,7 @@ fn determine_dest_path(file_path: &Path) -> Result<String> {
     Ok(format!("{parent_flat}/{file_name}"))
 }
 
+/// Append a `[[files]]` entry to the config file using `toml_edit` to preserve formatting.
 fn append_config_entry(config_path: &Path, src: &str, target: &str) -> Result<()> {
     let contents = std::fs::read_to_string(config_path)
         .with_context(|| format!("Failed to read config: {}", config_path.display()))?;

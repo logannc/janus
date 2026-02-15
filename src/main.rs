@@ -1,3 +1,9 @@
+//! Janus — a two-way dotfile manager.
+//!
+//! Provides a three-stage pipeline (generate → stage → deploy) for managing
+//! dotfiles with template rendering, plus reverse operations (import, undeploy,
+//! unimport) for bringing existing configs under management or removing them.
+
 mod cli;
 mod config;
 mod ops;
@@ -11,8 +17,11 @@ use tracing_subscriber::EnvFilter;
 use cli::{Cli, Command};
 use config::Config;
 
-/// Validate that either explicit files or `--all` was provided.
-/// Returns `None` to mean "all files".
+/// Validate that either explicit files or `--all` was provided, but not both.
+///
+/// Returns `None` when `--all` is set (meaning "process every configured file"),
+/// or `Some(files)` when explicit file patterns were given. Errors if neither
+/// or both are specified.
 fn require_files_or_all(files: Vec<String>, all: bool) -> Result<Option<Vec<String>>> {
     if all && !files.is_empty() {
         bail!("Cannot specify both --all and explicit files");

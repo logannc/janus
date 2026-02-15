@@ -1,6 +1,12 @@
+//! Command-line interface definitions using `clap` derive macros.
+//!
+//! The [`Cli`] struct is the top-level parser, and [`Command`] enumerates all
+//! available subcommands. Each variant's fields map directly to CLI arguments.
+
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+/// Top-level CLI arguments shared across all subcommands.
 #[derive(Parser)]
 #[command(name = "janus", about = "Two-way dotfile manager")]
 pub struct Cli {
@@ -24,6 +30,7 @@ pub struct Cli {
     pub command: Command,
 }
 
+/// Available subcommands for the janus CLI.
 #[derive(Subcommand)]
 pub enum Command {
     /// Initialize a dotfiles directory and config

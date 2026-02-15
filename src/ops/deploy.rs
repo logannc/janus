@@ -1,3 +1,12 @@
+//! Create symlinks from target paths to staged files.
+//!
+//! Each target path becomes a symlink pointing to the corresponding file in
+//! `.staged/`. Existing files are backed up unless `--force` is set. Uses
+//! fail-fast strategy with state saved after each file.
+//!
+//! The `atomic-deploy` feature (default) creates a temp symlink then atomically
+//! renames it over the target, avoiding any window where the file doesn't exist.
+
 use anyhow::{Context, Result};
 use std::path::Path;
 use tracing::{info, warn};
@@ -6,6 +15,10 @@ use crate::config::Config;
 use crate::paths::expand_tilde;
 use crate::state::{RecoveryInfo, State};
 
+/// Deploy staged files as symlinks to their target paths.
+///
+/// Bails on the first error. Saves state after each successful deployment
+/// with recovery info in case the save itself fails.
 pub fn run(config: &Config, files: Option<&[String]>, force: bool, dry_run: bool) -> Result<()> {
     let entries = config.filter_files(files);
     if entries.is_empty() {
@@ -66,6 +79,10 @@ pub fn run(config: &Config, files: Option<&[String]>, force: bool, dry_run: bool
     Ok(())
 }
 
+/// Create a symlink from `target_path` → `staged_path` using atomic rename.
+///
+/// Creates a temporary symlink (`.janus.tmp`) then renames it over the target
+/// so there's never a moment where the file is missing.
 #[cfg(feature = "atomic-deploy")]
 fn deploy_symlink(staged_path: &Path, target_path: &Path, force: bool) -> Result<()> {
     let exists = target_path.exists() || target_path.is_symlink();
@@ -107,6 +124,9 @@ fn deploy_symlink(staged_path: &Path, target_path: &Path, force: bool) -> Result
     Ok(())
 }
 
+/// Create a symlink from `target_path` → `staged_path` using remove-then-create.
+///
+/// Non-atomic fallback: removes the existing file first, then creates the symlink.
 #[cfg(not(feature = "atomic-deploy"))]
 fn deploy_symlink(staged_path: &Path, target_path: &Path, force: bool) -> Result<()> {
     if target_path.exists() || target_path.is_symlink() {
@@ -135,6 +155,7 @@ fn deploy_symlink(staged_path: &Path, target_path: &Path, force: bool) -> Result
     Ok(())
 }
 
+/// Compute the backup path for a file (e.g. `config.toml` → `config.toml.janus.bak`).
 fn backup_path_for(target_path: &Path) -> std::path::PathBuf {
     target_path.with_extension(format!(
         "{}.janus.bak",
@@ -145,6 +166,7 @@ fn backup_path_for(target_path: &Path) -> std::path::PathBuf {
     ))
 }
 
+/// Check if `target` is a symlink pointing to `expected_staged`.
 fn is_janus_symlink(target: &Path, expected_staged: &Path) -> bool {
     if !target.is_symlink() {
         return false;

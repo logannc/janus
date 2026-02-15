@@ -1,3 +1,13 @@
+//! Delete generated files or remove orphaned files from `.generated/` and `.staged/`.
+//!
+//! Two modes:
+//! - `--generated`: wipe everything in `.generated/` (files and empty dirs).
+//! - `--orphans`: remove files in `.generated/` and `.staged/` that are no longer
+//!   in the config. Staged orphans that are still actively deployed are preserved.
+//!
+//! Uses error-collection strategy: continues processing remaining files after
+//! individual failures.
+
 use anyhow::{bail, Result};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -8,11 +18,13 @@ use crate::config::Config;
 use crate::paths::expand_tilde;
 use crate::state::State;
 
+/// Result of a clean operation: count of removed files and any errors encountered.
 struct CleanResult {
     count: usize,
     errors: Vec<(PathBuf, anyhow::Error)>,
 }
 
+/// Clean generated files, orphans, or both. Requires at least one flag.
 pub fn run(config: &Config, generated: bool, orphans: bool, dry_run: bool) -> Result<()> {
     if !generated && !orphans {
         bail!("Specify --generated, --orphans, or both");
@@ -84,7 +96,11 @@ fn clean_generated(config: &Config, dry_run: bool) -> CleanResult {
     CleanResult { count, errors }
 }
 
-/// Remove orphan files from .generated/ and .staged/
+/// Remove orphan files from `.generated/` and `.staged/`.
+///
+/// A file is an orphan if its relative path doesn't match any configured `src`.
+/// Staged orphans that are still deployed as symlinks are preserved to avoid
+/// breaking live config files.
 fn clean_orphans(config: &Config, dry_run: bool) -> Result<CleanResult> {
     let configured_srcs: HashSet<&str> = config.files.iter().map(|f| f.src.as_str()).collect();
 
@@ -206,6 +222,7 @@ fn clean_orphans_in_dir(
     CleanResult { count, errors }
 }
 
+/// Check if `path` is a symlink pointing to `expected_target`.
 fn is_symlink_to(path: &Path, expected_target: &Path) -> bool {
     match std::fs::read_link(path) {
         Ok(dest) => dest == expected_target,

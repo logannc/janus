@@ -1,24 +1,39 @@
+//! Configuration types parsed from `~/.config/janus/config.toml`.
+//!
+//! The [`Config`] struct represents the top-level config, and [`FileEntry`]
+//! represents a single managed file with its source path, target path,
+//! template flag, and optional per-file variable overrides.
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::paths::expand_tilde;
 
+/// Top-level janus configuration, loaded from a TOML file.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
+    /// Path to the dotfiles directory (may contain `~`).
     pub dotfiles_dir: String,
+    /// Global template variable files, relative to `dotfiles_dir`.
     #[serde(default)]
     pub vars: Vec<String>,
+    /// Managed file entries.
     #[serde(default)]
     pub files: Vec<FileEntry>,
 }
 
+/// A single managed file entry in the janus config.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FileEntry {
+    /// Relative path within the dotfiles directory (e.g. `hypr/hypr.conf`).
     pub src: String,
+    /// Deployment target path (may contain `~`). Defaults to `~/.config/{src}`.
     pub target: Option<String>,
+    /// Whether to render this file as a Tera template. Defaults to `true`.
     #[serde(default = "default_true")]
     pub template: bool,
+    /// Per-file variable files that override globals, relative to `dotfiles_dir`.
     #[serde(default)]
     pub vars: Vec<String>,
 }
@@ -37,6 +52,7 @@ fn default_true() -> bool {
 }
 
 impl Config {
+    /// Load and parse a config file from the given path.
     pub fn load(path: &Path) -> Result<Self> {
         let contents = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read config file: {}", path.display()))?;
@@ -69,7 +85,10 @@ impl Config {
     }
 
     /// Filter file entries by the given file/glob patterns.
-    /// `None` means all entries; `Some` filters to matching entries.
+    ///
+    /// `None` returns all entries. `Some` returns only entries whose `src`
+    /// matches at least one pattern (glob syntax supported, falls back to
+    /// exact match if the pattern is not a valid glob).
     pub fn filter_files(&self, patterns: Option<&[String]>) -> Vec<&FileEntry> {
         let Some(patterns) = patterns else {
             return self.files.iter().collect();

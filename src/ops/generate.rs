@@ -1,3 +1,12 @@
+//! Render templates and copy source files into `.generated/`.
+//!
+//! For files with `template = true`, renders the source through Tera with
+//! merged global + per-file variables. For non-template files, copies as-is.
+//! Preserves Unix file permissions on all output files.
+//!
+//! Uses error-collection strategy: processes all files and reports failures
+//! at the end rather than bailing on the first error.
+
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
@@ -7,6 +16,9 @@ use tracing::{debug, info, trace, warn};
 
 use crate::config::{Config, FileEntry};
 
+/// Load template variables from one or more TOML files in the dotfiles directory.
+///
+/// Later files override earlier ones. Missing files are silently skipped.
 fn load_vars(dotfiles_dir: &Path, var_files: &[String]) -> Result<HashMap<String, toml::Value>> {
     let mut vars = HashMap::new();
     for var_file in var_files {
@@ -25,6 +37,7 @@ fn load_vars(dotfiles_dir: &Path, var_files: &[String]) -> Result<HashMap<String
     Ok(vars)
 }
 
+/// Convert a flat map of TOML values into a Tera template context.
 fn vars_to_tera_context(vars: &HashMap<String, toml::Value>) -> Result<tera::Context> {
     let mut context = tera::Context::new();
     for (key, value) in vars {
@@ -34,6 +47,10 @@ fn vars_to_tera_context(vars: &HashMap<String, toml::Value>) -> Result<tera::Con
     Ok(context)
 }
 
+/// Generate output files for the given file patterns (or all files).
+///
+/// Collects per-file errors and reports them at the end. Returns an error
+/// if any file failed to generate.
 pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<()> {
     let entries = config.filter_files(files);
     if entries.is_empty() {
@@ -74,6 +91,7 @@ pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<(
     Ok(())
 }
 
+/// Generate a single file: render template or copy, then preserve permissions.
 fn generate_file(
     _config: &Config,
     entry: &FileEntry,

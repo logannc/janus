@@ -1,9 +1,22 @@
+//! Copy generated files from `.generated/` into `.staged/`.
+//!
+//! Staged files are the final versions that will be symlinked to their target
+//! paths by `deploy`. This separation allows inspecting diffs between generated
+//! and staged content before deploying.
+//!
+//! Uses error-collection strategy: processes all files and reports failures
+//! at the end rather than bailing on the first error.
+
 use anyhow::{Context, Result};
 use std::os::unix::fs::PermissionsExt;
 use tracing::{info, warn};
 
 use crate::config::Config;
 
+/// Stage generated files for the given file patterns (or all files).
+///
+/// Collects per-file errors and reports them at the end. Returns an error
+/// if any file failed to stage.
 pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<()> {
     let entries = config.filter_files(files);
     if entries.is_empty() {
@@ -40,6 +53,7 @@ pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<(
     Ok(())
 }
 
+/// Copy a single file from `.generated/` to `.staged/`, preserving permissions.
 fn stage_file(
     entry: &crate::config::FileEntry,
     generated_dir: &std::path::Path,

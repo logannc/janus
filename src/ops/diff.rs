@@ -1,9 +1,19 @@
+//! Show unified diffs between `.generated/` and `.staged/` files.
+//!
+//! This is a read-only operation that helps inspect what changed between
+//! the last generation and the last staging. Uses the `similar` crate for
+//! diff computation with colored terminal output.
+
 use anyhow::{Context, Result};
 use similar::{ChangeTag, TextDiff};
 use tracing::info;
 
 use crate::config::Config;
 
+/// Display diffs between generated and staged versions of the given files.
+///
+/// Files with no diff are silently skipped. Missing generated or staged files
+/// are reported but don't cause an error.
 pub fn run(config: &Config, files: Option<&[String]>) -> Result<()> {
     let entries = config.filter_files(files);
     if entries.is_empty() {

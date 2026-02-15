@@ -1,8 +1,17 @@
+//! Initialize a new dotfiles directory and janus config.
+//!
+//! Creates the directory structure (`dotfiles_dir/`, `.generated/`, `.staged/`),
+//! a default `vars.toml`, an empty `.janus_state.toml`, and a config file at
+//! the default XDG config path.
+
 use anyhow::{Context, Result};
 use tracing::info;
 
 use crate::paths::expand_tilde;
 
+/// Scaffold the dotfiles directory, state file, and config file.
+///
+/// Skips creating any file or directory that already exists.
 pub fn run(dotfiles_dir: &str, dry_run: bool) -> Result<()> {
     let dotfiles_path = expand_tilde(dotfiles_dir);
     let config_path = crate::config::Config::default_path();
