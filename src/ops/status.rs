@@ -5,6 +5,7 @@
 //! deployment state and diff presence.
 
 use anyhow::{bail, Result};
+use std::collections::HashMap;
 use std::path::Path;
 use tracing::info;
 
@@ -30,6 +31,8 @@ struct FileStatus {
     deployed: bool,
     /// Human-readable detail string (e.g. "up to date", "source -> generated diff").
     detail: String,
+    /// Number of changed lines between generated and staged (0 if identical or missing).
+    changed_lines: usize,
 }
 
 /// Display pipeline status for the given files, applying optional filters.
@@ -71,6 +74,8 @@ pub fn run(config: &Config, files: Option<&[String]>, filters: StatusFilters) ->
             deployed,
         );
 
+        let changed_lines = count_changed_lines(&generated_path, &staged_path);
+
         let has_diff = detail.contains("diff") || detail.contains("missing") || detail.contains("not yet");
 
         // Apply filters
@@ -88,6 +93,7 @@ pub fn run(config: &Config, files: Option<&[String]>, filters: StatusFilters) ->
             src: src.clone(),
             deployed,
             detail,
+            changed_lines,
         });
     }
 
@@ -109,6 +115,25 @@ pub fn run(config: &Config, files: Option<&[String]>, filters: StatusFilters) ->
             status.detail,
             width = max_src_len,
         );
+    }
+
+    // Fileset sync summary
+    if !config.filesets.is_empty() {
+        let summary = fileset_sync_summary(config, &statuses);
+        if !summary.is_empty() {
+            println!();
+            println!("Filesets needing sync:");
+            let max_name_len = summary.iter().map(|(name, _, _)| name.len()).max().unwrap_or(0);
+            for (name, files_changed, total_lines) in &summary {
+                println!(
+                    "  {:<width$}  {} file(s) changed, {} line(s)",
+                    name,
+                    files_changed,
+                    total_lines,
+                    width = max_name_len,
+                );
+            }
+        }
     }
 
     Ok(())
@@ -175,6 +200,69 @@ fn files_match(a: &Path, b: &Path) -> bool {
         return false;
     };
     content_a == content_b
+}
+
+/// Count the number of changed lines between generated and staged files.
+///
+/// Returns 0 if either file is missing or they are identical.
+fn count_changed_lines(generated_path: &Path, staged_path: &Path) -> usize {
+    let Ok(generated) = std::fs::read_to_string(generated_path) else {
+        return 0;
+    };
+    let Ok(staged) = std::fs::read_to_string(staged_path) else {
+        return 0;
+    };
+    if generated == staged {
+        return 0;
+    }
+    let diff = similar::TextDiff::from_lines(&generated, &staged);
+    diff.ops()
+        .iter()
+        .map(|op| match *op {
+            similar::DiffOp::Equal { .. } => 0,
+            similar::DiffOp::Delete { old_len, .. } => old_len,
+            similar::DiffOp::Insert { new_len, .. } => new_len,
+            similar::DiffOp::Replace { old_len, new_len, .. } => old_len + new_len,
+        })
+        .sum()
+}
+
+/// Build a sorted summary of filesets with changed files.
+///
+/// Returns `(fileset_name, files_changed, total_changed_lines)` sorted by
+/// total changed lines descending.
+fn fileset_sync_summary(
+    config: &Config,
+    statuses: &[FileStatus],
+) -> Vec<(String, usize, usize)> {
+    let mut summary: HashMap<&str, (usize, usize)> = HashMap::new();
+
+    for (name, patterns) in &config.filesets {
+        for status in statuses {
+            if status.changed_lines == 0 {
+                continue;
+            }
+            let matches = patterns.iter().any(|pattern| {
+                if let Ok(glob_pattern) = glob::Pattern::new(pattern) {
+                    glob_pattern.matches(&status.src)
+                } else {
+                    status.src == *pattern
+                }
+            });
+            if matches {
+                let entry = summary.entry(name.as_str()).or_insert((0, 0));
+                entry.0 += 1;
+                entry.1 += status.changed_lines;
+            }
+        }
+    }
+
+    let mut result: Vec<(String, usize, usize)> = summary
+        .into_iter()
+        .map(|(name, (files, lines))| (name.to_string(), files, lines))
+        .collect();
+    result.sort_by(|a, b| b.2.cmp(&a.2));
+    result
 }
 
 /// Check if `target` is a symlink pointing to `expected_staged`.
