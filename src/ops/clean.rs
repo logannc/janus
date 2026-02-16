@@ -249,3 +249,128 @@ fn is_symlink_to(path: &Path, expected_target: &Path, fs: &impl Fs) -> bool {
         Err(_) => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::FakeFs;
+    use crate::test_helpers::*;
+
+    #[test]
+    fn requires_flag() {
+        let fs = setup_fs();
+        let config = write_and_load_config(&fs, &make_config_toml(&[]));
+        let result = run(&config, false, false, false, &fs);
+        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("--generated"), "got: {msg}");
+    }
+
+    #[test]
+    fn clean_generated_removes_all() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "a");
+        fs.add_file(format!("{DOTFILES}/.generated/b.conf"), "b");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None), ("b.conf", None)]),
+        );
+        run(&config, true, false, false, &fs).unwrap();
+        assert!(!fs.exists(Path::new(&format!(
+            "{DOTFILES}/.generated/a.conf"
+        ))));
+        assert!(!fs.exists(Path::new(&format!(
+            "{DOTFILES}/.generated/b.conf"
+        ))));
+    }
+
+    #[test]
+    fn clean_generated_missing_dir_noop() {
+        let fs = FakeFs::new(HOME);
+        fs.add_dir(DOTFILES);
+        fs.add_file(format!("{DOTFILES}/.janus_state.toml"), "");
+        // No .generated dir
+        let config = write_and_load_config(&fs, &make_config_toml(&[]));
+        run(&config, true, false, false, &fs).unwrap();
+    }
+
+    #[test]
+    fn clean_generated_dry_run() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "a");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        run(&config, true, false, true, &fs).unwrap();
+        // File should still exist
+        assert!(fs.exists(Path::new(&format!(
+            "{DOTFILES}/.generated/a.conf"
+        ))));
+    }
+
+    #[test]
+    fn clean_orphans_removes_unconfigured() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.generated/orphan.conf"), "orphan");
+        fs.add_file(format!("{DOTFILES}/.generated/kept.conf"), "kept");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("kept.conf", None)]),
+        );
+        run(&config, false, true, false, &fs).unwrap();
+        assert!(!fs.exists(Path::new(&format!(
+            "{DOTFILES}/.generated/orphan.conf"
+        ))));
+        assert!(fs.exists(Path::new(&format!(
+            "{DOTFILES}/.generated/kept.conf"
+        ))));
+    }
+
+    #[test]
+    fn clean_orphans_preserves_configured() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "a");
+        fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "a");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        run(&config, false, true, false, &fs).unwrap();
+        assert!(fs.exists(Path::new(&format!(
+            "{DOTFILES}/.generated/a.conf"
+        ))));
+        assert!(fs.exists(Path::new(&format!("{DOTFILES}/.staged/a.conf"))));
+    }
+
+    #[test]
+    fn clean_orphans_preserves_deployed_staged() {
+        let fs = setup_fs();
+        let staged_path = format!("{DOTFILES}/.staged/orphan.conf");
+        let target = format!("{HOME}/.config/orphan.conf");
+        fs.add_file(&staged_path, "orphan");
+        // Create a symlink at target pointing to staged
+        fs.add_symlink(&target, &staged_path);
+        // Mark as deployed in state
+        let state_toml = format!(
+            "[[deployed]]\nsrc = \"orphan.conf\"\ntarget = \"~/.config/orphan.conf\"\n"
+        );
+        fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
+        let config = write_and_load_config(&fs, &make_config_toml(&[]));
+        run(&config, false, true, false, &fs).unwrap();
+        // Staged orphan that is still deployed should be preserved
+        assert!(fs.exists(Path::new(&staged_path)));
+    }
+
+    #[test]
+    fn clean_orphans_removes_undeployed_staged() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.staged/orphan.conf"), "orphan");
+        // Not deployed
+        let config = write_and_load_config(&fs, &make_config_toml(&[]));
+        run(&config, false, true, false, &fs).unwrap();
+        assert!(!fs.exists(Path::new(&format!(
+            "{DOTFILES}/.staged/orphan.conf"
+        ))));
+    }
+}

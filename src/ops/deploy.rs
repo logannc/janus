@@ -215,3 +215,156 @@ fn is_janus_symlink(target: &Path, expected_staged: &Path, fs: &impl Fs) -> bool
         Err(_) => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::State;
+    use crate::test_helpers::*;
+    use std::path::PathBuf;
+
+    fn deploy_setup(fs: &crate::platform::FakeFs) -> Config {
+        fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "staged content");
+        write_and_load_config(
+            fs,
+            &make_config_toml(&[("a.conf", Some("~/.config/a.conf"))]),
+        )
+    }
+
+    #[test]
+    fn creates_symlink() {
+        let fs = setup_fs();
+        let config = deploy_setup(&fs);
+        run(&config, None, false, false, &fs).unwrap();
+        let target = Path::new("/home/test/.config/a.conf");
+        assert!(fs.is_symlink(target));
+        let link_dest = fs.read_link(target).unwrap();
+        assert_eq!(
+            link_dest,
+            PathBuf::from(format!("{DOTFILES}/.staged/a.conf"))
+        );
+    }
+
+    #[test]
+    fn updates_state() {
+        let fs = setup_fs();
+        let config = deploy_setup(&fs);
+        run(&config, None, false, false, &fs).unwrap();
+        let state = State::load(Path::new(DOTFILES), &fs).unwrap();
+        assert!(state.is_deployed("a.conf"));
+    }
+
+    #[test]
+    fn state_saved_per_file() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "a");
+        fs.add_file(format!("{DOTFILES}/.staged/b.conf"), "b");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[
+                ("a.conf", Some("~/.config/a.conf")),
+                ("b.conf", Some("~/.config/b.conf")),
+            ]),
+        );
+        run(&config, None, false, false, &fs).unwrap();
+        let state = State::load(Path::new(DOTFILES), &fs).unwrap();
+        assert!(state.is_deployed("a.conf"));
+        assert!(state.is_deployed("b.conf"));
+    }
+
+    #[test]
+    fn creates_parent_dirs() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.staged/deep/nested.conf"), "content");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("deep/nested.conf", Some("~/.config/deep/nested.conf"))]),
+        );
+        run(&config, None, false, false, &fs).unwrap();
+        assert!(fs.is_dir(Path::new("/home/test/.config/deep")));
+    }
+
+    #[test]
+    fn missing_staged_bails() {
+        let fs = setup_fs();
+        // No staged file
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("missing.conf", Some("~/.config/missing.conf"))]),
+        );
+        let result = run(&config, None, false, false, &fs);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn backup_existing_file() {
+        let fs = setup_fs();
+        // Put a regular file at the target
+        fs.add_file("/home/test/.config/a.conf", "existing content");
+        let config = deploy_setup(&fs);
+        run(&config, None, false, false, &fs).unwrap();
+        // Should have created backup
+        assert!(fs.exists(Path::new("/home/test/.config/a.conf.janus.bak")));
+    }
+
+    #[test]
+    fn force_overwrites() {
+        let fs = setup_fs();
+        fs.add_file("/home/test/.config/a.conf", "existing content");
+        let config = deploy_setup(&fs);
+        run(&config, None, true, false, &fs).unwrap();
+        // No backup with force
+        assert!(!fs.exists(Path::new("/home/test/.config/a.conf.janus.bak")));
+        // But symlink should exist
+        assert!(fs.is_symlink(Path::new("/home/test/.config/a.conf")));
+    }
+
+    #[test]
+    fn redeploy_no_backup() {
+        let fs = setup_fs();
+        let config = deploy_setup(&fs);
+        // Deploy once
+        run(&config, None, false, false, &fs).unwrap();
+        // Deploy again — existing janus symlink should be replaced without backup
+        run(&config, None, false, false, &fs).unwrap();
+        assert!(!fs.exists(Path::new("/home/test/.config/a.conf.janus.bak")));
+        assert!(fs.is_symlink(Path::new("/home/test/.config/a.conf")));
+    }
+
+    #[test]
+    fn dry_run() {
+        let fs = setup_fs();
+        let config = deploy_setup(&fs);
+        run(&config, None, false, true, &fs).unwrap();
+        assert!(!fs.exists(Path::new("/home/test/.config/a.conf")));
+        let state = State::load(Path::new(DOTFILES), &fs).unwrap();
+        assert!(!state.is_deployed("a.conf"));
+    }
+
+    #[test]
+    fn is_janus_symlink_true() {
+        let fs = setup_fs();
+        let staged = PathBuf::from(format!("{DOTFILES}/.staged/a.conf"));
+        let target = Path::new("/home/test/.config/a.conf");
+        fs.add_file(&staged, "content");
+        fs.add_symlink(target, &staged);
+        assert!(is_janus_symlink(target, &staged, &fs));
+    }
+
+    #[test]
+    fn is_janus_symlink_false() {
+        let fs = setup_fs();
+        let staged = PathBuf::from(format!("{DOTFILES}/.staged/a.conf"));
+        let target = Path::new("/home/test/.config/a.conf");
+        // Regular file, not a symlink
+        fs.add_file(target, "content");
+        assert!(!is_janus_symlink(target, &staged, &fs));
+        // Wrong target
+        fs.add_symlink("/home/test/.config/b.conf", "/wrong/path");
+        assert!(!is_janus_symlink(
+            Path::new("/home/test/.config/b.conf"),
+            &staged,
+            &fs
+        ));
+    }
+}

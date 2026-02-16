@@ -30,6 +30,7 @@ pub struct FakeFs {
     entries: RefCell<HashMap<PathBuf, FakeEntry>>,
     home: PathBuf,
     config_dir: PathBuf,
+    fail_writes: RefCell<bool>,
 }
 
 impl FakeFs {
@@ -48,7 +49,13 @@ impl FakeFs {
             entries: RefCell::new(entries),
             home,
             config_dir,
+            fail_writes: RefCell::new(false),
         }
+    }
+
+    /// Toggle write failures. When enabled, all `Fs::write` calls bail.
+    pub fn set_fail_writes(&self, fail: bool) {
+        *self.fail_writes.borrow_mut() = fail;
     }
 
     // -- Setup helpers (not part of the Fs trait) --
@@ -169,6 +176,9 @@ impl Fs for FakeFs {
     }
 
     fn write(&self, path: &Path, contents: &[u8]) -> Result<()> {
+        if *self.fail_writes.borrow() {
+            bail!("simulated write failure: {}", path.display());
+        }
         let resolved = self.resolve_path(path);
         // Preserve existing mode if file already exists
         let mode = {

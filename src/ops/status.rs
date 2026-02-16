@@ -285,3 +285,151 @@ fn is_janus_symlink(target: &Path, expected_staged: &Path, fs: &impl Fs) -> bool
         Err(_) => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::*;
+
+    fn make_filters(only_diffs: bool, deployed: bool, undeployed: bool) -> StatusFilters {
+        StatusFilters {
+            only_diffs,
+            deployed,
+            undeployed,
+        }
+    }
+
+    #[test]
+    fn up_to_date() {
+        let fs = setup_fs();
+        setup_pipeline_file(&fs, "a.conf", "content");
+        // Deploy it
+        let staged = format!("{DOTFILES}/.staged/a.conf");
+        fs.add_symlink("/home/test/.config/a.conf", &staged);
+        let state_toml =
+            "[[deployed]]\nsrc = \"a.conf\"\ntarget = \"~/.config/a.conf\"\n";
+        fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", Some("~/.config/a.conf"))]),
+        );
+        // Should succeed
+        run(&config, None, make_filters(false, false, false), &fs).unwrap();
+    }
+
+    #[test]
+    fn not_generated() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/a.conf"), "content");
+        // No .generated file
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        run(&config, None, make_filters(false, false, false), &fs).unwrap();
+    }
+
+    #[test]
+    fn not_staged() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/a.conf"), "content");
+        fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "content");
+        // No .staged file
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        run(&config, None, make_filters(false, false, false), &fs).unwrap();
+    }
+
+    #[test]
+    fn source_generated_diff() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/a.conf"), "source {{ var }}");
+        fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "source rendered");
+        fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "source rendered");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        run(&config, None, make_filters(false, false, false), &fs).unwrap();
+    }
+
+    #[test]
+    fn deployed_filter() {
+        let fs = setup_fs();
+        setup_pipeline_file(&fs, "deployed.conf", "content");
+        setup_pipeline_file(&fs, "undeployed.conf", "content");
+        let staged = format!("{DOTFILES}/.staged/deployed.conf");
+        fs.add_symlink("/home/test/.config/deployed.conf", &staged);
+        let state_toml =
+            "[[deployed]]\nsrc = \"deployed.conf\"\ntarget = \"~/.config/deployed.conf\"\n";
+        fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[
+                ("deployed.conf", Some("~/.config/deployed.conf")),
+                ("undeployed.conf", Some("~/.config/undeployed.conf")),
+            ]),
+        );
+        // With --deployed filter, should succeed (only shows deployed files)
+        run(&config, None, make_filters(false, true, false), &fs).unwrap();
+    }
+
+    #[test]
+    fn undeployed_filter() {
+        let fs = setup_fs();
+        setup_pipeline_file(&fs, "deployed.conf", "content");
+        setup_pipeline_file(&fs, "undeployed.conf", "content");
+        let staged = format!("{DOTFILES}/.staged/deployed.conf");
+        fs.add_symlink("/home/test/.config/deployed.conf", &staged);
+        let state_toml =
+            "[[deployed]]\nsrc = \"deployed.conf\"\ntarget = \"~/.config/deployed.conf\"\n";
+        fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[
+                ("deployed.conf", Some("~/.config/deployed.conf")),
+                ("undeployed.conf", Some("~/.config/undeployed.conf")),
+            ]),
+        );
+        // With --undeployed filter
+        run(&config, None, make_filters(false, false, true), &fs).unwrap();
+    }
+
+    #[test]
+    fn both_filters_error() {
+        let fs = setup_fs();
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        let result = run(&config, None, make_filters(false, true, true), &fs);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn only_diffs_filter() {
+        let fs = setup_fs();
+        // a.conf is up to date (all same content, deployed)
+        setup_pipeline_file(&fs, "a.conf", "same");
+        let staged_a = format!("{DOTFILES}/.staged/a.conf");
+        fs.add_symlink("/home/test/.config/a.conf", &staged_a);
+        // b.conf has a diff (generated != staged)
+        fs.add_file(format!("{DOTFILES}/b.conf"), "src");
+        fs.add_file(format!("{DOTFILES}/.generated/b.conf"), "src");
+        fs.add_file(format!("{DOTFILES}/.staged/b.conf"), "different");
+        let state_toml =
+            "[[deployed]]\nsrc = \"a.conf\"\ntarget = \"~/.config/a.conf\"\n";
+        fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[
+                ("a.conf", Some("~/.config/a.conf")),
+                ("b.conf", Some("~/.config/b.conf")),
+            ]),
+        );
+        // Should succeed with only_diffs
+        run(&config, None, make_filters(true, false, false), &fs).unwrap();
+    }
+}

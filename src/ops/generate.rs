@@ -227,3 +227,294 @@ fn generate_file(
     info!("Generated {}", entry.src);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::FakeSecretEngine;
+    use crate::test_helpers::*;
+
+    fn make_engine() -> FakeSecretEngine {
+        FakeSecretEngine::new()
+    }
+
+    #[test]
+    fn template_with_vars() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "name = \"world\"");
+        fs.add_file(format!("{DOTFILES}/greet.conf"), "Hello {{ name }}!");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("greet.conf", None)]),
+        );
+        run(&config, None, false, &fs, &make_engine()).unwrap();
+        let content = fs
+            .read_to_string(Path::new(&format!("{DOTFILES}/.generated/greet.conf")))
+            .unwrap();
+        assert_eq!(content, "Hello world!");
+    }
+
+    #[test]
+    fn non_template_copy() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        let binary_content = b"\x00\x01\x02\x03";
+        fs.add_file(format!("{DOTFILES}/data.bin"), binary_content.to_vec());
+        let toml = format!(
+            "dotfiles_dir = \"{DOTFILES}\"\nvars = [\"vars.toml\"]\n\n[[files]]\nsrc = \"data.bin\"\ntemplate = false\n"
+        );
+        let config = write_and_load_config(&fs, &toml);
+        run(&config, None, false, &fs, &make_engine()).unwrap();
+        let content = fs
+            .read(Path::new(&format!("{DOTFILES}/.generated/data.bin")))
+            .unwrap();
+        assert_eq!(content, binary_content);
+    }
+
+    #[test]
+    fn preserves_permissions() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file_with_mode(format!("{DOTFILES}/script.sh"), "#!/bin/bash", 0o755);
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("script.sh", None)]),
+        );
+        run(&config, None, false, &fs, &make_engine()).unwrap();
+        let mode = fs
+            .file_mode(Path::new(&format!("{DOTFILES}/.generated/script.sh")))
+            .unwrap();
+        assert_eq!(mode, 0o755);
+    }
+
+    #[test]
+    fn creates_parent_dirs() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file(format!("{DOTFILES}/hypr/hypr.conf"), "content");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("hypr/hypr.conf", None)]),
+        );
+        run(&config, None, false, &fs, &make_engine()).unwrap();
+        assert!(fs.is_dir(Path::new(&format!("{DOTFILES}/.generated/hypr"))));
+    }
+
+    #[test]
+    fn missing_source_collected() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file(format!("{DOTFILES}/good.conf"), "content");
+        // "bad.conf" source doesn't exist
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("good.conf", None), ("bad.conf", None)]),
+        );
+        let result = run(&config, None, false, &fs, &make_engine());
+        assert!(result.is_err());
+        // good.conf should still have been generated
+        assert!(fs.exists(Path::new(&format!(
+            "{DOTFILES}/.generated/good.conf"
+        ))));
+    }
+
+    #[test]
+    fn missing_vars_file_skipped() {
+        let fs = setup_fs();
+        // vars.toml doesn't exist but that's OK
+        fs.add_file(format!("{DOTFILES}/a.conf"), "plain content");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        run(&config, None, false, &fs, &make_engine()).unwrap();
+    }
+
+    #[test]
+    fn var_merge_order() {
+        let fs = setup_fs();
+        // Global var
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "val = \"global\"");
+        // Fileset var
+        fs.add_file(format!("{DOTFILES}/fs-vars.toml"), "val = \"fileset\"");
+        // Per-file var
+        fs.add_file(format!("{DOTFILES}/file-vars.toml"), "val = \"perfile\"");
+        fs.add_file(format!("{DOTFILES}/test.conf"), "{{ val }}");
+
+        let toml = format!(
+            r#"
+dotfiles_dir = "{DOTFILES}"
+vars = ["vars.toml"]
+
+[[files]]
+src = "test.conf"
+vars = ["file-vars.toml"]
+
+[filesets.all]
+patterns = ["test.conf"]
+vars = ["fs-vars.toml"]
+"#
+        );
+        let config = write_and_load_config(&fs, &toml);
+        run(&config, None, false, &fs, &make_engine()).unwrap();
+        let content = fs
+            .read_to_string(Path::new(&format!("{DOTFILES}/.generated/test.conf")))
+            .unwrap();
+        assert_eq!(content, "perfile");
+    }
+
+    #[test]
+    fn secret_injection() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file(
+            format!("{DOTFILES}/secrets.toml"),
+            "[[secret]]\nname = \"db_pass\"\nengine = \"1password\"\nreference = \"op://db/pass\"\n",
+        );
+        fs.add_file(format!("{DOTFILES}/db.conf"), "password={{ db_pass }}");
+
+        let toml = format!(
+            r#"
+dotfiles_dir = "{DOTFILES}"
+vars = ["vars.toml"]
+secrets = ["secrets.toml"]
+
+[[files]]
+src = "db.conf"
+"#
+        );
+        let config = write_and_load_config(&fs, &toml);
+        let mut engine = FakeSecretEngine::new();
+        engine.add_secret("1password", "op://db/pass", "s3cret");
+        run(&config, None, false, &fs, &engine).unwrap();
+        let content = fs
+            .read_to_string(Path::new(&format!("{DOTFILES}/.generated/db.conf")))
+            .unwrap();
+        assert_eq!(content, "password=s3cret");
+    }
+
+    #[test]
+    fn secret_var_conflict() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "name = \"conflict\"");
+        fs.add_file(
+            format!("{DOTFILES}/secrets.toml"),
+            "[[secret]]\nname = \"name\"\nengine = \"1password\"\nreference = \"op://x\"\n",
+        );
+        fs.add_file(format!("{DOTFILES}/test.conf"), "{{ name }}");
+
+        let toml = format!(
+            r#"
+dotfiles_dir = "{DOTFILES}"
+vars = ["vars.toml"]
+secrets = ["secrets.toml"]
+
+[[files]]
+src = "test.conf"
+"#
+        );
+        let config = write_and_load_config(&fs, &toml);
+        let mut engine = FakeSecretEngine::new();
+        engine.add_secret("1password", "op://x", "val");
+        let result = run(&config, None, false, &fs, &engine);
+        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("collision"), "got: {msg}");
+    }
+
+    #[test]
+    fn all_files() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file(format!("{DOTFILES}/a.conf"), "a");
+        fs.add_file(format!("{DOTFILES}/b.conf"), "b");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None), ("b.conf", None)]),
+        );
+        run(&config, None, false, &fs, &make_engine()).unwrap();
+        assert!(fs.exists(Path::new(&format!("{DOTFILES}/.generated/a.conf"))));
+        assert!(fs.exists(Path::new(&format!("{DOTFILES}/.generated/b.conf"))));
+    }
+
+    #[test]
+    fn filtered_files() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file(format!("{DOTFILES}/a.conf"), "a");
+        fs.add_file(format!("{DOTFILES}/b.conf"), "b");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None), ("b.conf", None)]),
+        );
+        let patterns = vec!["a.conf".to_string()];
+        run(&config, Some(&patterns), false, &fs, &make_engine()).unwrap();
+        assert!(fs.exists(Path::new(&format!("{DOTFILES}/.generated/a.conf"))));
+        assert!(!fs.exists(Path::new(&format!(
+            "{DOTFILES}/.generated/b.conf"
+        ))));
+    }
+
+    #[test]
+    fn error_collection() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file(format!("{DOTFILES}/good.conf"), "ok");
+        // missing1 and missing2 don't exist
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[
+                ("good.conf", None),
+                ("missing1.conf", None),
+                ("missing2.conf", None),
+            ]),
+        );
+        let result = run(&config, None, false, &fs, &make_engine());
+        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("2 file(s)"), "got: {msg}");
+    }
+
+    #[test]
+    fn dry_run() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file(format!("{DOTFILES}/a.conf"), "content");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        run(&config, None, true, &fs, &make_engine()).unwrap();
+        assert!(!fs.exists(Path::new(&format!(
+            "{DOTFILES}/.generated/a.conf"
+        ))));
+    }
+
+    #[test]
+    fn fileset_vars_inherited() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file(format!("{DOTFILES}/fs-vars.toml"), "color = \"blue\"");
+        fs.add_file(format!("{DOTFILES}/test.conf"), "{{ color }}");
+
+        let toml = format!(
+            r#"
+dotfiles_dir = "{DOTFILES}"
+vars = ["vars.toml"]
+
+[[files]]
+src = "test.conf"
+
+[filesets.themed]
+patterns = ["test.conf"]
+vars = ["fs-vars.toml"]
+"#
+        );
+        let config = write_and_load_config(&fs, &toml);
+        run(&config, None, false, &fs, &make_engine()).unwrap();
+        let content = fs
+            .read_to_string(Path::new(&format!("{DOTFILES}/.generated/test.conf")))
+            .unwrap();
+        assert_eq!(content, "blue");
+    }
+}

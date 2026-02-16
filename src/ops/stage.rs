@@ -101,3 +101,96 @@ fn stage_file(
     info!("Staged {}", entry.src);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::*;
+
+    #[test]
+    fn copies_to_staged() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "generated content");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        run(&config, None, false, &fs).unwrap();
+        let content = fs
+            .read_to_string(Path::new(&format!("{DOTFILES}/.staged/a.conf")))
+            .unwrap();
+        assert_eq!(content, "generated content");
+    }
+
+    #[test]
+    fn preserves_permissions() {
+        let fs = setup_fs();
+        fs.add_file_with_mode(
+            format!("{DOTFILES}/.generated/script.sh"),
+            "#!/bin/bash",
+            0o755,
+        );
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("script.sh", None)]),
+        );
+        run(&config, None, false, &fs).unwrap();
+        let mode = fs
+            .file_mode(Path::new(&format!("{DOTFILES}/.staged/script.sh")))
+            .unwrap();
+        assert_eq!(mode, 0o755);
+    }
+
+    #[test]
+    fn missing_generated_errors() {
+        let fs = setup_fs();
+        // No generated file exists
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("missing.conf", None)]),
+        );
+        let result = run(&config, None, false, &fs);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn all_files() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "a");
+        fs.add_file(format!("{DOTFILES}/.generated/b.conf"), "b");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None), ("b.conf", None)]),
+        );
+        run(&config, None, false, &fs).unwrap();
+        assert!(fs.exists(Path::new(&format!("{DOTFILES}/.staged/a.conf"))));
+        assert!(fs.exists(Path::new(&format!("{DOTFILES}/.staged/b.conf"))));
+    }
+
+    #[test]
+    fn filtered_files() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "a");
+        fs.add_file(format!("{DOTFILES}/.generated/b.conf"), "b");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None), ("b.conf", None)]),
+        );
+        let patterns = vec!["a.conf".to_string()];
+        run(&config, Some(&patterns), false, &fs).unwrap();
+        assert!(fs.exists(Path::new(&format!("{DOTFILES}/.staged/a.conf"))));
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/.staged/b.conf"))));
+    }
+
+    #[test]
+    fn dry_run() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "content");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        run(&config, None, true, &fs).unwrap();
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/.staged/a.conf"))));
+    }
+}

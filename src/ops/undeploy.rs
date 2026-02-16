@@ -207,3 +207,98 @@ fn undeploy_with_copy(staged_path: &Path, target_path: &Path, fs: &impl Fs) -> R
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::*;
+
+    fn deploy_and_undeploy_setup(
+        fs: &crate::platform::FakeFs,
+    ) -> Config {
+        let staged = format!("{DOTFILES}/.staged/a.conf");
+        let target = "/home/test/.config/a.conf";
+        fs.add_file(&staged, "staged content");
+        fs.add_symlink(target, &staged);
+        // Mark as deployed in state
+        let state_toml =
+            "[[deployed]]\nsrc = \"a.conf\"\ntarget = \"~/.config/a.conf\"\n";
+        fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
+        write_and_load_config(
+            fs,
+            &make_config_toml(&[("a.conf", Some("~/.config/a.conf"))]),
+        )
+    }
+
+    #[test]
+    fn leaves_copy_default() {
+        let fs = setup_fs();
+        let config = deploy_and_undeploy_setup(&fs);
+        run(&config, None, false, false, &fs).unwrap();
+        let target = Path::new("/home/test/.config/a.conf");
+        // Should be a regular file, not a symlink
+        assert!(!fs.is_symlink(target));
+        assert!(fs.is_file(target));
+        let content = fs.read_to_string(target).unwrap();
+        assert_eq!(content, "staged content");
+    }
+
+    #[test]
+    fn remove_file_deletes() {
+        let fs = setup_fs();
+        let config = deploy_and_undeploy_setup(&fs);
+        run(&config, None, true, false, &fs).unwrap();
+        assert!(!fs.exists(Path::new("/home/test/.config/a.conf")));
+    }
+
+    #[test]
+    fn updates_state() {
+        let fs = setup_fs();
+        let config = deploy_and_undeploy_setup(&fs);
+        run(&config, None, false, false, &fs).unwrap();
+        let state = State::load(Path::new(DOTFILES), &fs).unwrap();
+        assert!(!state.is_deployed("a.conf"));
+    }
+
+    #[test]
+    fn skips_not_deployed() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "staged");
+        // NOT in deployed state
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", Some("~/.config/a.conf"))]),
+        );
+        // Should succeed without error (just skips)
+        run(&config, None, false, false, &fs).unwrap();
+    }
+
+    #[test]
+    fn skips_non_janus_symlink() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "staged");
+        // Create a symlink that points somewhere else
+        fs.add_symlink("/home/test/.config/a.conf", "/some/other/file");
+        // Mark as deployed
+        let state_toml =
+            "[[deployed]]\nsrc = \"a.conf\"\ntarget = \"~/.config/a.conf\"\n";
+        fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", Some("~/.config/a.conf"))]),
+        );
+        // Should succeed without error, but skip the non-janus symlink
+        run(&config, None, false, false, &fs).unwrap();
+        // Symlink should still exist (wasn't touched)
+        assert!(fs.is_symlink(Path::new("/home/test/.config/a.conf")));
+    }
+
+    #[test]
+    fn dry_run() {
+        let fs = setup_fs();
+        let config = deploy_and_undeploy_setup(&fs);
+        run(&config, None, false, true, &fs).unwrap();
+        // Symlink should still exist
+        assert!(fs.is_symlink(Path::new("/home/test/.config/a.conf")));
+    }
+}

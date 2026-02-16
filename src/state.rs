@@ -166,3 +166,186 @@ impl State {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::FakeFs;
+    use crate::test_helpers::*;
+
+    fn load_state(fs: &FakeFs) -> State {
+        State::load(Path::new(DOTFILES), fs).unwrap()
+    }
+
+    #[test]
+    fn load_missing_returns_default() {
+        let fs = FakeFs::new(HOME);
+        fs.add_dir(DOTFILES);
+        // No state file exists
+        let state = State::load(Path::new(DOTFILES), &fs).unwrap();
+        assert!(state.deployed.is_empty());
+        assert!(state.ignored.is_empty());
+    }
+
+    #[test]
+    fn load_existing_state() {
+        let fs = setup_fs();
+        let toml = r#"
+[[deployed]]
+src = "hypr/hypr.conf"
+target = "~/.config/hypr/hypr.conf"
+
+[[ignored]]
+path = "~/.bashrc"
+reason = "user_declined"
+"#;
+        fs.add_file(format!("{DOTFILES}/.janus_state.toml"), toml);
+        let state = load_state(&fs);
+        assert_eq!(state.deployed.len(), 1);
+        assert_eq!(state.deployed[0].src, "hypr/hypr.conf");
+        assert_eq!(state.ignored.len(), 1);
+        assert_eq!(state.ignored[0].path, "~/.bashrc");
+    }
+
+    #[test]
+    fn save_and_reload_roundtrip() {
+        let fs = setup_fs();
+        let mut state = load_state(&fs);
+        state.add_deployed("a.conf".to_string(), "~/.config/a.conf".to_string());
+        state.add_ignored("~/.zshrc".to_string(), "user_declined".to_string());
+        state.save(&fs).unwrap();
+
+        let reloaded = load_state(&fs);
+        assert!(reloaded.is_deployed("a.conf"));
+        assert!(reloaded.is_ignored("~/.zshrc"));
+    }
+
+    #[test]
+    fn add_deployed_new() {
+        let mut state = State::default();
+        state.add_deployed("a.conf".to_string(), "~/.config/a.conf".to_string());
+        assert!(state.is_deployed("a.conf"));
+        assert_eq!(state.deployed.len(), 1);
+    }
+
+    #[test]
+    fn add_deployed_updates_target() {
+        let mut state = State::default();
+        state.add_deployed("a.conf".to_string(), "~/.config/a.conf".to_string());
+        state.add_deployed("a.conf".to_string(), "/new/target".to_string());
+        assert_eq!(state.deployed.len(), 1);
+        assert_eq!(state.deployed[0].target, "/new/target");
+    }
+
+    #[test]
+    fn add_deployed_duplicate_noop() {
+        let mut state = State::default();
+        state.add_deployed("a.conf".to_string(), "~/.config/a.conf".to_string());
+        state.add_deployed("a.conf".to_string(), "~/.config/a.conf".to_string());
+        assert_eq!(state.deployed.len(), 1);
+    }
+
+    #[test]
+    fn remove_deployed() {
+        let mut state = State::default();
+        state.add_deployed("a.conf".to_string(), "~/.config/a.conf".to_string());
+        state.remove_deployed("a.conf");
+        assert!(!state.is_deployed("a.conf"));
+        assert!(state.deployed.is_empty());
+    }
+
+    #[test]
+    fn remove_deployed_missing_noop() {
+        let mut state = State::default();
+        state.remove_deployed("nonexistent");
+        assert!(state.deployed.is_empty());
+    }
+
+    #[test]
+    fn is_deployed() {
+        let mut state = State::default();
+        assert!(!state.is_deployed("a.conf"));
+        state.add_deployed("a.conf".to_string(), "target".to_string());
+        assert!(state.is_deployed("a.conf"));
+    }
+
+    #[test]
+    fn add_ignored_new() {
+        let mut state = State::default();
+        state.add_ignored("~/.bashrc".to_string(), "user_declined".to_string());
+        assert!(state.is_ignored("~/.bashrc"));
+        assert_eq!(state.ignored.len(), 1);
+    }
+
+    #[test]
+    fn add_ignored_duplicate_noop() {
+        let mut state = State::default();
+        state.add_ignored("~/.bashrc".to_string(), "user_declined".to_string());
+        state.add_ignored("~/.bashrc".to_string(), "user_declined".to_string());
+        assert_eq!(state.ignored.len(), 1);
+    }
+
+    #[test]
+    fn remove_ignored() {
+        let mut state = State::default();
+        state.add_ignored("~/.bashrc".to_string(), "user_declined".to_string());
+        state.remove_ignored("~/.bashrc");
+        assert!(!state.is_ignored("~/.bashrc"));
+        assert!(state.ignored.is_empty());
+    }
+
+    #[test]
+    fn is_ignored() {
+        let mut state = State::default();
+        assert!(!state.is_ignored("~/.bashrc"));
+        state.add_ignored("~/.bashrc".to_string(), "user_declined".to_string());
+        assert!(state.is_ignored("~/.bashrc"));
+    }
+
+    #[test]
+    fn index_consistency() {
+        let mut state = State::default();
+        state.add_deployed("a".to_string(), "t1".to_string());
+        state.add_deployed("b".to_string(), "t2".to_string());
+        state.add_deployed("c".to_string(), "t3".to_string());
+        state.remove_deployed("b");
+        state.add_deployed("d".to_string(), "t4".to_string());
+        state.remove_deployed("a");
+
+        // Vec and index should agree
+        assert_eq!(state.deployed.len(), 2);
+        for entry in &state.deployed {
+            assert!(state.deployed_index.contains(&entry.src));
+        }
+        assert!(!state.is_deployed("a"));
+        assert!(!state.is_deployed("b"));
+        assert!(state.is_deployed("c"));
+        assert!(state.is_deployed("d"));
+    }
+
+    #[test]
+    fn save_with_recovery_success() {
+        let fs = setup_fs();
+        let state = load_state(&fs);
+        let recovery = RecoveryInfo {
+            situation: vec!["test".to_string()],
+            consequence: vec!["test".to_string()],
+            instructions: vec!["test".to_string()],
+        };
+        assert!(state.save_with_recovery(recovery, &fs).is_ok());
+    }
+
+    #[test]
+    fn save_with_recovery_failure() {
+        let fs = setup_fs();
+        let state = load_state(&fs);
+        fs.set_fail_writes(true);
+        let recovery = RecoveryInfo {
+            situation: vec!["deployed file".to_string()],
+            consequence: vec!["state desync".to_string()],
+            instructions: vec!["fix manually".to_string()],
+        };
+        let result = state.save_with_recovery(recovery, &fs);
+        assert!(result.is_err());
+    }
+}

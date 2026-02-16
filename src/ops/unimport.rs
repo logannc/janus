@@ -168,3 +168,128 @@ fn remove_empty_parents(path: &Path, stop_at: &Path, fs: &impl Fs) {
         current = dir.parent();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::State;
+    use crate::test_helpers::*;
+
+    fn setup_managed_file(fs: &crate::platform::FakeFs) -> Config {
+        // Source file
+        fs.add_file(format!("{DOTFILES}/a.conf"), "source");
+        fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "generated");
+        fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "staged");
+        // Deploy it
+        let staged = format!("{DOTFILES}/.staged/a.conf");
+        fs.add_symlink("/home/test/.config/a.conf", &staged);
+        let state_toml =
+            "[[deployed]]\nsrc = \"a.conf\"\ntarget = \"~/.config/a.conf\"\n";
+        fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
+        write_and_load_config(
+            fs,
+            &make_config_toml(&[("a.conf", Some("~/.config/a.conf"))]),
+        )
+    }
+
+    #[test]
+    fn full_reversal() {
+        let fs = setup_fs();
+        let config = setup_managed_file(&fs);
+        let files = vec!["a.conf".to_string()];
+        run(&config, Path::new(CONFIG_PATH), &files, false, false, &fs).unwrap();
+        // Source, generated, staged should be removed
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/a.conf"))));
+        assert!(!fs.exists(Path::new(&format!(
+            "{DOTFILES}/.generated/a.conf"
+        ))));
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/.staged/a.conf"))));
+        // Target should have a copy (not removed by default)
+        assert!(fs.is_file(Path::new("/home/test/.config/a.conf")));
+        assert!(!fs.is_symlink(Path::new("/home/test/.config/a.conf")));
+        // State should be updated
+        let state = State::load(Path::new(DOTFILES), &fs).unwrap();
+        assert!(!state.is_deployed("a.conf"));
+    }
+
+    #[test]
+    fn not_deployed() {
+        let fs = setup_fs();
+        // Source file but NOT deployed
+        fs.add_file(format!("{DOTFILES}/a.conf"), "source");
+        fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "generated");
+        fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "staged");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", Some("~/.config/a.conf"))]),
+        );
+        let files = vec!["a.conf".to_string()];
+        run(&config, Path::new(CONFIG_PATH), &files, false, false, &fs).unwrap();
+        // Files should still be cleaned up
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/a.conf"))));
+    }
+
+    #[test]
+    fn empty_files_errors() {
+        let fs = setup_fs();
+        let config = write_and_load_config(&fs, &make_config_toml(&[]));
+        let result = run(&config, Path::new(CONFIG_PATH), &[], false, false, &fs);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn dry_run() {
+        let fs = setup_fs();
+        let config = setup_managed_file(&fs);
+        let files = vec!["a.conf".to_string()];
+        run(&config, Path::new(CONFIG_PATH), &files, false, true, &fs).unwrap();
+        // Nothing should be removed
+        assert!(fs.exists(Path::new(&format!("{DOTFILES}/a.conf"))));
+        assert!(fs.is_symlink(Path::new("/home/test/.config/a.conf")));
+    }
+
+    #[test]
+    fn removes_empty_parent_dirs() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/deep/nested/a.conf"), "source");
+        fs.add_file(format!("{DOTFILES}/.generated/deep/nested/a.conf"), "gen");
+        fs.add_file(format!("{DOTFILES}/.staged/deep/nested/a.conf"), "staged");
+        let staged = format!("{DOTFILES}/.staged/deep/nested/a.conf");
+        fs.add_symlink("/home/test/.config/deep/nested/a.conf", &staged);
+        let state_toml = "[[deployed]]\nsrc = \"deep/nested/a.conf\"\ntarget = \"~/.config/deep/nested/a.conf\"\n";
+        fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[(
+                "deep/nested/a.conf",
+                Some("~/.config/deep/nested/a.conf"),
+            )]),
+        );
+        let files = vec!["deep/nested/a.conf".to_string()];
+        run(&config, Path::new(CONFIG_PATH), &files, false, false, &fs).unwrap();
+        // Parent dirs should be removed since they're empty
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/deep/nested"))));
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/deep"))));
+    }
+
+    #[test]
+    fn removes_config_entry() {
+        let fs = setup_fs();
+        let config = setup_managed_file(&fs);
+        let files = vec!["a.conf".to_string()];
+        run(&config, Path::new(CONFIG_PATH), &files, false, false, &fs).unwrap();
+        // Config should no longer contain the entry
+        let content = fs.read_to_string(Path::new(CONFIG_PATH)).unwrap();
+        assert!(!content.contains("a.conf"), "config still contains a.conf: {content}");
+    }
+
+    #[test]
+    fn remove_config_entry_missing_warns() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/a.conf"), "source");
+        let toml = make_config_toml(&[("a.conf", Some("~/.config/a.conf"))]);
+        fs.add_file(CONFIG_PATH, toml.as_str());
+        // Removing a non-existent entry should warn but not error
+        super::remove_config_entry(Path::new(CONFIG_PATH), "nonexistent.conf", &fs).unwrap();
+    }
+}

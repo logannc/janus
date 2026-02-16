@@ -85,3 +85,55 @@ pub fn run(config: &Config, files: Option<&[String]>, fs: &impl Fs) -> Result<()
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::*;
+
+    #[test]
+    fn identical_no_error() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "same");
+        fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "same");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        run(&config, None, &fs).unwrap();
+    }
+
+    #[test]
+    fn different_files_succeeds() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "old");
+        fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "new");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        run(&config, None, &fs).unwrap();
+    }
+
+    #[test]
+    fn missing_generated_no_error() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "staged");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        run(&config, None, &fs).unwrap();
+    }
+
+    #[test]
+    fn missing_staged_no_error() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "generated");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        run(&config, None, &fs).unwrap();
+    }
+}

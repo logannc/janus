@@ -89,3 +89,53 @@ pub fn run(dotfiles_dir: &str, dry_run: bool, fs: &impl Fs) -> Result<()> {
     info!("Initialization complete");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::FakeFs;
+    use std::path::Path;
+
+    #[test]
+    fn creates_all_dirs() {
+        let fs = FakeFs::new("/home/test");
+        run("~/dotfiles", false, &fs).unwrap();
+        assert!(fs.is_dir(Path::new("/home/test/dotfiles")));
+        assert!(fs.is_dir(Path::new("/home/test/dotfiles/.generated")));
+        assert!(fs.is_dir(Path::new("/home/test/dotfiles/.staged")));
+    }
+
+    #[test]
+    fn creates_default_files() {
+        let fs = FakeFs::new("/home/test");
+        run("~/dotfiles", false, &fs).unwrap();
+        assert!(fs.exists(Path::new("/home/test/dotfiles/vars.toml")));
+        assert!(fs.exists(Path::new("/home/test/dotfiles/.janus_state.toml")));
+        assert!(fs.exists(Path::new("/home/test/.config/janus/config.toml")));
+    }
+
+    #[test]
+    fn idempotent() {
+        let fs = FakeFs::new("/home/test");
+        run("~/dotfiles", false, &fs).unwrap();
+        // Read the config to check its content
+        let content1 = fs
+            .read_to_string(Path::new("/home/test/.config/janus/config.toml"))
+            .unwrap();
+        // Run again
+        run("~/dotfiles", false, &fs).unwrap();
+        let content2 = fs
+            .read_to_string(Path::new("/home/test/.config/janus/config.toml"))
+            .unwrap();
+        // Content should be identical (not overwritten)
+        assert_eq!(content1, content2);
+    }
+
+    #[test]
+    fn dry_run() {
+        let fs = FakeFs::new("/home/test");
+        run("~/dotfiles", true, &fs).unwrap();
+        assert!(!fs.exists(Path::new("/home/test/dotfiles")));
+        assert!(!fs.exists(Path::new("/home/test/.config/janus/config.toml")));
+    }
+}

@@ -36,3 +36,62 @@ pub fn collapse_tilde(path: &Path, fs: &impl Fs) -> String {
     }
     path.display().to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::FakeFs;
+    use std::path::Path;
+
+    #[test]
+    fn expand_tilde_home_prefix() {
+        let fs = FakeFs::new("/home/test");
+        assert_eq!(expand_tilde("~/foo", &fs), PathBuf::from("/home/test/foo"));
+    }
+
+    #[test]
+    fn expand_tilde_bare_tilde() {
+        let fs = FakeFs::new("/home/test");
+        assert_eq!(expand_tilde("~", &fs), PathBuf::from("/home/test"));
+    }
+
+    #[test]
+    fn expand_tilde_no_tilde() {
+        let fs = FakeFs::new("/home/test");
+        assert_eq!(expand_tilde("/etc/foo", &fs), PathBuf::from("/etc/foo"));
+        assert_eq!(expand_tilde("relative/path", &fs), PathBuf::from("relative/path"));
+    }
+
+    #[test]
+    fn expand_tilde_tilde_not_at_start() {
+        let fs = FakeFs::new("/home/test");
+        assert_eq!(expand_tilde("foo/~/bar", &fs), PathBuf::from("foo/~/bar"));
+    }
+
+    #[test]
+    fn collapse_tilde_under_home() {
+        let fs = FakeFs::new("/home/test");
+        assert_eq!(collapse_tilde(Path::new("/home/test/foo"), &fs), "~/foo");
+    }
+
+    #[test]
+    fn collapse_tilde_not_under_home() {
+        let fs = FakeFs::new("/home/test");
+        assert_eq!(collapse_tilde(Path::new("/etc/foo"), &fs), "/etc/foo");
+    }
+
+    #[test]
+    fn collapse_tilde_exact_home() {
+        let fs = FakeFs::new("/home/test");
+        assert_eq!(collapse_tilde(Path::new("/home/test"), &fs), "~/");
+    }
+
+    #[test]
+    fn roundtrip() {
+        let fs = FakeFs::new("/home/test");
+        let original = "~/some/path";
+        let expanded = expand_tilde(original, &fs);
+        let collapsed = collapse_tilde(&expanded, &fs);
+        assert_eq!(collapsed, "~/some/path");
+    }
+}

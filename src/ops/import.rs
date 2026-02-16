@@ -296,3 +296,276 @@ fn append_config_entry(
     debug!("Added config entry: src={}, target={}", src, target);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform::{FakePrompter, FakeSecretEngine};
+    use crate::state::State;
+    use crate::test_helpers::*;
+
+    fn make_engine() -> FakeSecretEngine {
+        FakeSecretEngine::new()
+    }
+
+    #[test]
+    fn dest_path_under_config() {
+        let fs = crate::platform::FakeFs::new("/home/test");
+        let result = determine_dest_path(Path::new("/home/test/.config/hypr/f"), &fs).unwrap();
+        assert_eq!(result, "hypr/f");
+    }
+
+    #[test]
+    fn dest_path_under_home() {
+        let fs = crate::platform::FakeFs::new("/home/test");
+        let result = determine_dest_path(Path::new("/home/test/.bashrc"), &fs).unwrap();
+        assert_eq!(result, "bashrc");
+    }
+
+    #[test]
+    fn dest_path_outside_home() {
+        let fs = crate::platform::FakeFs::new("/home/test");
+        let result =
+            determine_dest_path(Path::new("/etc/systemd/system/foo.service"), &fs).unwrap();
+        assert_eq!(result, "etc_systemd_system/foo.service");
+    }
+
+    #[test]
+    fn import_single_file() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        // File to import
+        fs.add_file("/home/test/.config/hypr/hypr.conf", "monitor=DP-1");
+        let config = write_and_load_config(&fs, &make_config_toml(&[]));
+        let prompter = FakePrompter::new(vec![0]); // Import
+        run(
+            &config,
+            Path::new(CONFIG_PATH),
+            "~/.config/hypr/hypr.conf",
+            false,
+            10,
+            false,
+            &fs,
+            &make_engine(),
+            &prompter,
+        )
+        .unwrap();
+        // File should be copied to dotfiles dir
+        assert!(fs.exists(Path::new(&format!(
+            "{DOTFILES}/hypr/hypr.conf"
+        ))));
+        // Should be deployed
+        let state = State::load(Path::new(DOTFILES), &fs).unwrap();
+        assert!(state.is_deployed("hypr/hypr.conf"));
+    }
+
+    #[test]
+    fn skips_already_managed() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file("/home/test/.config/a.conf", "content");
+        // a.conf is already in config
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", Some("~/.config/a.conf"))]),
+        );
+        let prompter = FakePrompter::new(vec![]); // No prompts expected
+        run(
+            &config,
+            Path::new(CONFIG_PATH),
+            "~/.config/a.conf",
+            false,
+            10,
+            false,
+            &fs,
+            &make_engine(),
+            &prompter,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn skips_ignored() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file("/home/test/.config/ignored.conf", "content");
+        let state_toml =
+            "[[ignored]]\npath = \"~/.config/ignored.conf\"\nreason = \"user_declined\"\n";
+        fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
+        let config = write_and_load_config(&fs, &make_config_toml(&[]));
+        let prompter = FakePrompter::new(vec![]); // No prompts
+        run(
+            &config,
+            Path::new(CONFIG_PATH),
+            "~/.config/ignored.conf",
+            false,
+            10,
+            false,
+            &fs,
+            &make_engine(),
+            &prompter,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn user_ignores() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file("/home/test/.config/new.conf", "content");
+        let config = write_and_load_config(&fs, &make_config_toml(&[]));
+        let prompter = FakePrompter::new(vec![1]); // Ignore
+        run(
+            &config,
+            Path::new(CONFIG_PATH),
+            "~/.config/new.conf",
+            false,
+            10,
+            false,
+            &fs,
+            &make_engine(),
+            &prompter,
+        )
+        .unwrap();
+        let state = State::load(Path::new(DOTFILES), &fs).unwrap();
+        assert!(state.is_ignored("~/.config/new.conf"));
+    }
+
+    #[test]
+    fn user_skips() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file("/home/test/.config/skip.conf", "content");
+        let config = write_and_load_config(&fs, &make_config_toml(&[]));
+        let prompter = FakePrompter::new(vec![2]); // Skip
+        run(
+            &config,
+            Path::new(CONFIG_PATH),
+            "~/.config/skip.conf",
+            false,
+            10,
+            false,
+            &fs,
+            &make_engine(),
+            &prompter,
+        )
+        .unwrap();
+        // Should not be ignored or imported
+        let state = State::load(Path::new(DOTFILES), &fs).unwrap();
+        assert!(!state.is_ignored("~/.config/skip.conf"));
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/skip.conf"))));
+    }
+
+    #[test]
+    fn import_all_no_prompt() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file("/home/test/.config/auto.conf", "auto");
+        let config = write_and_load_config(&fs, &make_config_toml(&[]));
+        let prompter = FakePrompter::new(vec![]); // No prompts expected
+        run(
+            &config,
+            Path::new(CONFIG_PATH),
+            "~/.config/auto.conf",
+            true, // import_all
+            10,
+            false,
+            &fs,
+            &make_engine(),
+            &prompter,
+        )
+        .unwrap();
+        assert!(fs.exists(Path::new(&format!("{DOTFILES}/auto.conf"))));
+    }
+
+    #[test]
+    fn nonexistent_path_errors() {
+        let fs = setup_fs();
+        let config = write_and_load_config(&fs, &make_config_toml(&[]));
+        let prompter = FakePrompter::new(vec![]);
+        let result = run(
+            &config,
+            Path::new(CONFIG_PATH),
+            "/nonexistent/file",
+            false,
+            10,
+            false,
+            &fs,
+            &make_engine(),
+            &prompter,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn destination_exists_errors() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file("/home/test/.config/dup.conf", "original");
+        // Destination already exists in dotfiles dir
+        fs.add_file(format!("{DOTFILES}/dup.conf"), "existing");
+        let config = write_and_load_config(&fs, &make_config_toml(&[]));
+        let prompter = FakePrompter::new(vec![0]); // Import
+        let result = run(
+            &config,
+            Path::new(CONFIG_PATH),
+            "~/.config/dup.conf",
+            false,
+            10,
+            false,
+            &fs,
+            &make_engine(),
+            &prompter,
+        );
+        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("already exists"), "got: {msg}");
+    }
+
+    #[test]
+    fn dry_run() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file("/home/test/.config/dry.conf", "content");
+        let config = write_and_load_config(&fs, &make_config_toml(&[]));
+        let prompter = FakePrompter::new(vec![0]); // Import
+        run(
+            &config,
+            Path::new(CONFIG_PATH),
+            "~/.config/dry.conf",
+            false,
+            10,
+            true, // dry_run
+            &fs,
+            &make_engine(),
+            &prompter,
+        )
+        .unwrap();
+        // Nothing should be written
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/dry.conf"))));
+    }
+
+    #[test]
+    fn append_config_entry_default_target() {
+        let fs = setup_fs();
+        let toml = make_config_toml(&[]);
+        fs.add_file(CONFIG_PATH, toml.as_str());
+        append_config_entry(Path::new(CONFIG_PATH), "hypr/hypr.conf", "~/.config/hypr/hypr.conf", &fs)
+            .unwrap();
+        let content = fs.read_to_string(Path::new(CONFIG_PATH)).unwrap();
+        // target should be omitted since it matches the default
+        assert!(content.contains("src = \"hypr/hypr.conf\""));
+        assert!(!content.contains("target = "));
+    }
+
+    #[test]
+    fn append_config_entry_custom_target() {
+        let fs = setup_fs();
+        let toml = make_config_toml(&[]);
+        fs.add_file(CONFIG_PATH, toml.as_str());
+        append_config_entry(Path::new(CONFIG_PATH), "bashrc", "~/.bashrc", &fs).unwrap();
+        let content = fs.read_to_string(Path::new(CONFIG_PATH)).unwrap();
+        assert!(content.contains("src = \"bashrc\""));
+        assert!(content.contains("target = \"~/.bashrc\""));
+    }
+}
