@@ -8,6 +8,7 @@ mod cli;
 mod config;
 mod ops;
 mod paths;
+mod platform;
 mod secrets;
 mod state;
 
