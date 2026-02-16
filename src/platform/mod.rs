@@ -15,6 +15,26 @@ pub use real_fs::RealFs;
 pub use real_prompt::RealPrompter;
 pub use real_secret::RealSecretEngine;
 
+#[cfg(test)]
+mod fake_fs;
+#[cfg(test)]
+mod fake_prompt;
+#[cfg(test)]
+mod fake_secret;
+
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(crate) use self::fake_fs::FakeEntry;
+#[cfg(test)]
+#[allow(unused_imports)]
+pub use self::fake_fs::FakeFs;
+#[cfg(test)]
+#[allow(unused_imports)]
+pub use self::fake_prompt::FakePrompter;
+#[cfg(test)]
+#[allow(unused_imports)]
+pub use self::fake_secret::FakeSecretEngine;
+
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
