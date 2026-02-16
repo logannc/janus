@@ -11,6 +11,7 @@ use tracing::info;
 
 use crate::config::Config;
 use crate::paths::expand_tilde;
+use crate::platform::Fs;
 use crate::state::State;
 
 /// Filtering options for the status display.
@@ -39,7 +40,12 @@ struct FileStatus {
 ///
 /// `--deployed` and `--undeployed` are mutually exclusive. `--only-diffs`
 /// can be combined with either.
-pub fn run(config: &Config, files: Option<&[String]>, filters: StatusFilters) -> Result<()> {
+pub fn run(
+    config: &Config,
+    files: Option<&[String]>,
+    filters: StatusFilters,
+    fs: &impl Fs,
+) -> Result<()> {
     if filters.deployed && filters.undeployed {
         bail!("Cannot specify both --deployed and --undeployed");
     }
@@ -51,10 +57,10 @@ pub fn run(config: &Config, files: Option<&[String]>, filters: StatusFilters) ->
         return Ok(());
     }
 
-    let dotfiles_dir = config.dotfiles_dir();
-    let generated_dir = config.generated_dir();
-    let staged_dir = config.staged_dir();
-    let state = State::load(&dotfiles_dir)?;
+    let dotfiles_dir = config.dotfiles_dir(fs);
+    let generated_dir = config.generated_dir(fs);
+    let staged_dir = config.staged_dir(fs);
+    let state = State::load(&dotfiles_dir, fs)?;
 
     let mut statuses: Vec<FileStatus> = Vec::new();
 
@@ -63,13 +69,13 @@ pub fn run(config: &Config, files: Option<&[String]>, filters: StatusFilters) ->
         let source_path = dotfiles_dir.join(src);
         let generated_path = generated_dir.join(src);
         let staged_path = staged_dir.join(src);
-        let target_path = expand_tilde(&entry.target());
+        let target_path = expand_tilde(&entry.target(), fs);
 
-        let deployed = state.is_deployed(src) && is_janus_symlink(&target_path, &staged_path);
+        let deployed = state.is_deployed(src) && is_janus_symlink(&target_path, &staged_path, fs);
 
-        let detail = compute_detail(&source_path, &generated_path, &staged_path, deployed);
+        let detail = compute_detail(&source_path, &generated_path, &staged_path, deployed, fs);
 
-        let changed_lines = count_changed_lines(&generated_path, &staged_path);
+        let changed_lines = count_changed_lines(&generated_path, &staged_path, fs);
 
         let has_diff =
             detail.contains("diff") || detail.contains("missing") || detail.contains("not yet");
@@ -145,26 +151,27 @@ pub fn run(config: &Config, files: Option<&[String]>, filters: StatusFilters) ->
 
 /// Compute a human-readable detail string describing the file's pipeline state.
 ///
-/// Checks existence and content equality at each stage: source → generated → staged.
+/// Checks existence and content equality at each stage: source -> generated -> staged.
 /// Returns descriptions like "up to date", "not yet generated", "source -> generated diff".
 fn compute_detail(
     source_path: &Path,
     generated_path: &Path,
     staged_path: &Path,
     is_deployed: bool,
+    fs: &impl Fs,
 ) -> String {
-    if !source_path.exists() {
+    if !fs.exists(source_path) {
         return "source missing".to_string();
     }
 
-    if !generated_path.exists() {
+    if !fs.exists(generated_path) {
         return "not yet generated".to_string();
     }
 
     // Check source vs generated
-    let source_matches_generated = files_match(source_path, generated_path);
+    let source_matches_generated = files_match(source_path, generated_path, fs);
 
-    if !staged_path.exists() {
+    if !fs.exists(staged_path) {
         if !source_matches_generated {
             return "source -> generated diff, not yet staged".to_string();
         }
@@ -172,7 +179,7 @@ fn compute_detail(
     }
 
     // Check generated vs staged
-    let generated_matches_staged = files_match(generated_path, staged_path);
+    let generated_matches_staged = files_match(generated_path, staged_path, fs);
 
     let mut parts = Vec::new();
 
@@ -196,11 +203,11 @@ fn compute_detail(
 }
 
 /// Compare two files by content. Returns false if either file can't be read.
-fn files_match(a: &Path, b: &Path) -> bool {
-    let Ok(content_a) = std::fs::read(a) else {
+fn files_match(a: &Path, b: &Path, fs: &impl Fs) -> bool {
+    let Ok(content_a) = fs.read(a) else {
         return false;
     };
-    let Ok(content_b) = std::fs::read(b) else {
+    let Ok(content_b) = fs.read(b) else {
         return false;
     };
     content_a == content_b
@@ -209,11 +216,11 @@ fn files_match(a: &Path, b: &Path) -> bool {
 /// Count the number of changed lines between generated and staged files.
 ///
 /// Returns 0 if either file is missing or they are identical.
-fn count_changed_lines(generated_path: &Path, staged_path: &Path) -> usize {
-    let Ok(generated) = std::fs::read_to_string(generated_path) else {
+fn count_changed_lines(generated_path: &Path, staged_path: &Path, fs: &impl Fs) -> usize {
+    let Ok(generated) = fs.read_to_string(generated_path) else {
         return 0;
     };
-    let Ok(staged) = std::fs::read_to_string(staged_path) else {
+    let Ok(staged) = fs.read_to_string(staged_path) else {
         return 0;
     };
     if generated == staged {
@@ -269,11 +276,11 @@ fn fileset_sync_summary(config: &Config, statuses: &[FileStatus]) -> Vec<(String
 }
 
 /// Check if `target` is a symlink pointing to `expected_staged`.
-fn is_janus_symlink(target: &Path, expected_staged: &Path) -> bool {
-    if !target.is_symlink() {
+fn is_janus_symlink(target: &Path, expected_staged: &Path, fs: &impl Fs) -> bool {
+    if !fs.is_symlink(target) {
         return false;
     }
-    match std::fs::read_link(target) {
+    match fs.read_link(target) {
         Ok(link_dest) => link_dest == expected_staged,
         Err(_) => false,
     }

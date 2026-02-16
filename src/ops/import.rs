@@ -3,26 +3,24 @@
 //! Takes a file or directory path, walks it (with configurable depth), and for
 //! each file: prompts the user (Import/Ignore/Skip), copies it into the dotfiles
 //! directory, adds a `[[files]]` entry to the config, and runs the full forward
-//! pipeline (generate → stage → deploy).
+//! pipeline (generate -> stage -> deploy).
 //!
 //! Uses fail-fast strategy since each file mutates config, state, and the filesystem.
 
 use anyhow::{Context, Result};
-use dialoguer::Select;
 use std::collections::HashSet;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
-use walkdir::WalkDir;
 
 use crate::config::Config;
 use crate::paths::{collapse_tilde, expand_tilde};
+use crate::platform::{Fs, Prompter, SecretEngine, WalkOptions};
 use crate::state::{RecoveryInfo, State};
 
 /// Import files from the given path into janus management.
 ///
 /// If `import_all` is true, skips interactive prompts and imports everything.
-/// Each imported file is immediately deployed (generate → stage → deploy).
+/// Each imported file is immediately deployed (generate -> stage -> deploy).
 pub fn run(
     config: &Config,
     config_path: &Path,
@@ -30,24 +28,31 @@ pub fn run(
     import_all: bool,
     max_depth: usize,
     dry_run: bool,
+    fs: &impl Fs,
+    engine: &impl SecretEngine,
+    prompter: &impl Prompter,
 ) -> Result<()> {
-    let source_path = expand_tilde(path);
-    let dotfiles_dir = config.dotfiles_dir();
-    let mut state = State::load(&dotfiles_dir)?;
+    let source_path = expand_tilde(path, fs);
+    let dotfiles_dir = config.dotfiles_dir(fs);
+    let mut state = State::load(&dotfiles_dir, fs)?;
 
-    if !source_path.exists() {
+    if !fs.exists(&source_path) {
         anyhow::bail!("Path does not exist: {}", source_path.display());
     }
 
-    let files: Vec<PathBuf> = if source_path.is_dir() {
-        WalkDir::new(&source_path)
-            .max_depth(max_depth)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .map(|e| e.into_path())
-            .collect()
+    let files: Vec<PathBuf> = if fs.is_dir(&source_path) {
+        fs.walk_dir(
+            &source_path,
+            &WalkOptions {
+                max_depth: Some(max_depth),
+                follow_links: true,
+                ..Default::default()
+            },
+        )?
+        .into_iter()
+        .filter(|e| e.is_file)
+        .map(|e| e.path)
+        .collect()
     } else {
         vec![source_path.clone()]
     };
@@ -62,11 +67,11 @@ pub fn run(
     let managed_targets: HashSet<PathBuf> = config
         .files
         .iter()
-        .map(|f| expand_tilde(&f.target()))
+        .map(|f| expand_tilde(&f.target(), fs))
         .collect();
 
     for file_path in &files {
-        let target_str = collapse_tilde(file_path);
+        let target_str = collapse_tilde(file_path, fs);
 
         // Check if already managed
         if managed_targets.contains(file_path) {
@@ -81,27 +86,29 @@ pub fn run(
         }
 
         if !import_all {
-            let selection = Select::new()
-                .with_prompt(format!("Import {}?", target_str))
-                .items(&["Import", "Ignore", "Skip"])
-                .default(0)
-                .interact()
-                .context("Failed to get user input")?;
+            let selection = prompter.select(
+                &format!("Import {}?", target_str),
+                &["Import", "Ignore", "Skip"],
+                0,
+            )?;
 
             match selection {
                 0 => {} // Import - continue below
                 1 => {
                     // Ignore
                     state.add_ignored(target_str.clone(), "user_declined".to_string());
-                    state.save_with_recovery(RecoveryInfo {
-                        situation: vec![format!("{target_str} was marked as ignored")],
-                        consequence: vec![format!(
-                            "{target_str} will be prompted again on next import"
-                        )],
-                        instructions: vec![format!(
-                            "Add an [[ignored]] entry to the statefile with path = \"{target_str}\""
-                        )],
-                    })?;
+                    state.save_with_recovery(
+                        RecoveryInfo {
+                            situation: vec![format!("{target_str} was marked as ignored")],
+                            consequence: vec![format!(
+                                "{target_str} will be prompted again on next import"
+                            )],
+                            instructions: vec![format!(
+                                "Add an [[ignored]] entry to the statefile with path = \"{target_str}\""
+                            )],
+                        },
+                        fs,
+                    )?;
                     info!("Ignored {}", target_str);
                     continue;
                 }
@@ -120,6 +127,8 @@ pub fn run(
             config_path,
             &mut state,
             dry_run,
+            fs,
+            engine,
         )?;
     }
 
@@ -134,12 +143,14 @@ fn import_file(
     config_path: &Path,
     state: &mut State,
     dry_run: bool,
+    fs: &impl Fs,
+    engine: &impl SecretEngine,
 ) -> Result<()> {
     // Determine destination path in dotfiles dir
-    let dest_relative = determine_dest_path(file_path)?;
+    let dest_relative = determine_dest_path(file_path, fs)?;
     let dest_path = dotfiles_dir.join(&dest_relative);
 
-    if dest_path.exists() {
+    if fs.exists(&dest_path) {
         anyhow::bail!(
             "Destination already exists: {} (would overwrite existing source file)",
             dest_path.display()
@@ -156,47 +167,48 @@ fn import_file(
 
     // Copy file to dotfiles dir
     if let Some(parent) = dest_path.parent() {
-        std::fs::create_dir_all(parent)
+        fs.create_dir_all(parent)
             .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
     }
 
-    std::fs::copy(file_path, &dest_path)
+    fs.copy(file_path, &dest_path)
         .with_context(|| format!("Failed to copy file: {}", file_path.display()))?;
 
     // Preserve permissions
-    let metadata = std::fs::metadata(file_path)
+    let mode = fs
+        .file_mode(file_path)
         .with_context(|| format!("Failed to read metadata: {}", file_path.display()))?;
-    std::fs::set_permissions(
-        &dest_path,
-        std::fs::Permissions::from_mode(metadata.permissions().mode()),
-    )
-    .with_context(|| format!("Failed to set permissions: {}", dest_path.display()))?;
+    fs.set_file_mode(&dest_path, mode)
+        .with_context(|| format!("Failed to set permissions: {}", dest_path.display()))?;
 
     // Append config entry using toml_edit
-    append_config_entry(config_path, &dest_relative, target_str)?;
+    append_config_entry(config_path, &dest_relative, target_str, fs)?;
 
     // Generate, stage, and deploy
-    let config = crate::config::Config::load(config_path)?;
+    let config = crate::config::Config::load(config_path, fs)?;
     let file_patterns = vec![dest_relative.clone()];
 
-    crate::ops::generate::run(&config, Some(&file_patterns), false)?;
-    crate::ops::stage::run(&config, Some(&file_patterns), false)?;
-    crate::ops::deploy::run(&config, Some(&file_patterns), true, false)?;
+    crate::ops::generate::run(&config, Some(&file_patterns), false, fs, engine)?;
+    crate::ops::stage::run(&config, Some(&file_patterns), false, fs)?;
+    crate::ops::deploy::run(&config, Some(&file_patterns), true, false, fs)?;
 
     state.add_deployed(dest_relative.clone(), target_str.to_string());
-    state.save_with_recovery(RecoveryInfo {
-        situation: vec![
-            format!("{target_str} has been imported and deployed"),
-        ],
-        consequence: vec![
-            format!("janus will not know {target_str} is deployed"),
-            "The file is already in the dotfiles dir and config".to_string(),
-        ],
-        instructions: vec![
-            format!("Add a [[deployed]] entry to the statefile with src = \"{dest_relative}\" and target = \"{target_str}\""),
-            format!("Or re-run: janus deploy {dest_relative}"),
-        ],
-    })?;
+    state.save_with_recovery(
+        RecoveryInfo {
+            situation: vec![format!("{target_str} has been imported and deployed")],
+            consequence: vec![
+                format!("janus will not know {target_str} is deployed"),
+                "The file is already in the dotfiles dir and config".to_string(),
+            ],
+            instructions: vec![
+                format!(
+                    "Add a [[deployed]] entry to the statefile with src = \"{dest_relative}\" and target = \"{target_str}\""
+                ),
+                format!("Or re-run: janus deploy {dest_relative}"),
+            ],
+        },
+        fs,
+    )?;
     info!("Imported {}", target_str);
     Ok(())
 }
@@ -204,19 +216,21 @@ fn import_file(
 /// Determine the relative destination path within the dotfiles directory.
 ///
 /// Resolution order:
-/// 1. Files under `~/.config/` → strip that prefix (e.g. `~/.config/hypr/hypr.conf` → `hypr/hypr.conf`)
-/// 2. Files under `~/` → strip home + leading dot (e.g. `~/.bashrc` → `bashrc`)
-/// 3. Files elsewhere → flatten parent with underscores (e.g. `/etc/systemd/system/foo.service` → `etc_systemd_system/foo.service`)
-fn determine_dest_path(file_path: &Path) -> Result<String> {
-    let config_dir = dirs::config_dir().unwrap_or_else(|| expand_tilde("~/.config"));
+/// 1. Files under `~/.config/` -> strip that prefix (e.g. `~/.config/hypr/hypr.conf` -> `hypr/hypr.conf`)
+/// 2. Files under `~/` -> strip home + leading dot (e.g. `~/.bashrc` -> `bashrc`)
+/// 3. Files elsewhere -> flatten parent with underscores (e.g. `/etc/systemd/system/foo.service` -> `etc_systemd_system/foo.service`)
+fn determine_dest_path(file_path: &Path, fs: &impl Fs) -> Result<String> {
+    let config_dir = fs
+        .config_dir()
+        .unwrap_or_else(|| expand_tilde("~/.config", fs));
 
-    // Files under ~/.config/ → strip that prefix, preserving subdirectory structure
+    // Files under ~/.config/ -> strip that prefix, preserving subdirectory structure
     if let Ok(relative) = file_path.strip_prefix(&config_dir) {
         return Ok(relative.display().to_string());
     }
 
-    // Files under ~/ → use relative path, stripping leading dot from hidden dirs
-    if let Some(home) = dirs::home_dir()
+    // Files under ~/ -> use relative path, stripping leading dot from hidden dirs
+    if let Some(home) = fs.home_dir()
         && let Ok(relative) = file_path.strip_prefix(&home)
     {
         let rel_str = relative.display().to_string();
@@ -244,8 +258,14 @@ fn determine_dest_path(file_path: &Path) -> Result<String> {
 }
 
 /// Append a `[[files]]` entry to the config file using `toml_edit` to preserve formatting.
-fn append_config_entry(config_path: &Path, src: &str, target: &str) -> Result<()> {
-    let contents = std::fs::read_to_string(config_path)
+fn append_config_entry(
+    config_path: &Path,
+    src: &str,
+    target: &str,
+    fs: &impl Fs,
+) -> Result<()> {
+    let contents = fs
+        .read_to_string(config_path)
         .with_context(|| format!("Failed to read config: {}", config_path.display()))?;
 
     let mut doc = contents
@@ -270,7 +290,7 @@ fn append_config_entry(config_path: &Path, src: &str, target: &str) -> Result<()
         anyhow::bail!("Config 'files' field is malformed");
     }
 
-    std::fs::write(config_path, doc.to_string())
+    fs.write(config_path, doc.to_string().as_bytes())
         .with_context(|| format!("Failed to write config: {}", config_path.display()))?;
 
     debug!("Added config entry: src={}, target={}", src, target);

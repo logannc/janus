@@ -13,6 +13,7 @@ use tracing::{debug, info, warn};
 
 use crate::config::Config;
 use crate::paths::expand_tilde;
+use crate::platform::Fs;
 use crate::state::State;
 
 /// Unimport files: undeploy, remove config entry, delete source/generated/staged copies.
@@ -29,15 +30,16 @@ pub fn run(
     files: &[String],
     remove_file: bool,
     dry_run: bool,
+    fs: &impl Fs,
 ) -> Result<()> {
     if files.is_empty() {
         anyhow::bail!("Specify files to unimport");
     }
 
-    let dotfiles_dir = config.dotfiles_dir();
-    let generated_dir = config.generated_dir();
-    let staged_dir = config.staged_dir();
-    let mut state = State::load(&dotfiles_dir)?;
+    let dotfiles_dir = config.dotfiles_dir(fs);
+    let generated_dir = config.generated_dir(fs);
+    let staged_dir = config.staged_dir(fs);
+    let mut state = State::load(&dotfiles_dir, fs)?;
 
     let entries = config.filter_files(Some(files));
     if entries.is_empty() {
@@ -46,7 +48,7 @@ pub fn run(
 
     for entry in &entries {
         let src = &entry.src;
-        let target_path = expand_tilde(&entry.target());
+        let target_path = expand_tilde(&entry.target(), fs);
 
         if dry_run {
             info!("[dry-run] Would unimport: {}", src);
@@ -61,48 +63,49 @@ pub fn run(
                 &target_path,
                 remove_file,
                 &mut state,
+                fs,
             )?;
         }
 
         // 2. Remove config entry
-        remove_config_entry(config_path, src)?;
+        remove_config_entry(config_path, src, fs)?;
 
         // 3. Remove source file from dotfiles dir
         let source_path = dotfiles_dir.join(src);
-        if source_path.exists() {
-            std::fs::remove_file(&source_path).with_context(|| {
+        if fs.exists(&source_path) {
+            fs.remove_file(&source_path).with_context(|| {
                 format!("Failed to remove source file: {}", source_path.display())
             })?;
             // Clean up empty parent directories
-            remove_empty_parents(&source_path, &dotfiles_dir);
+            remove_empty_parents(&source_path, &dotfiles_dir, fs);
             debug!("Removed source: {}", source_path.display());
         }
 
         // 4. Remove generated file
         let generated_path = generated_dir.join(src);
-        if generated_path.exists() {
-            std::fs::remove_file(&generated_path).with_context(|| {
+        if fs.exists(&generated_path) {
+            fs.remove_file(&generated_path).with_context(|| {
                 format!(
                     "Failed to remove generated file: {}",
                     generated_path.display()
                 )
             })?;
-            remove_empty_parents(&generated_path, &generated_dir);
+            remove_empty_parents(&generated_path, &generated_dir, fs);
             debug!("Removed generated: {}", generated_path.display());
         }
 
         // 5. Remove staged file
         let staged_path = staged_dir.join(src);
-        if staged_path.exists() {
-            std::fs::remove_file(&staged_path).with_context(|| {
+        if fs.exists(&staged_path) {
+            fs.remove_file(&staged_path).with_context(|| {
                 format!("Failed to remove staged file: {}", staged_path.display())
             })?;
-            remove_empty_parents(&staged_path, &staged_dir);
+            remove_empty_parents(&staged_path, &staged_dir, fs);
             debug!("Removed staged: {}", staged_path.display());
         }
 
         state
-            .save()
+            .save(fs)
             .with_context(|| format!("Failed to save state after unimporting {}", src))?;
 
         info!("Unimported {}", src);
@@ -115,8 +118,9 @@ pub fn run(
 ///
 /// Uses `toml_edit` to preserve formatting and comments in the config.
 /// Warns (but doesn't error) if no matching entry is found.
-fn remove_config_entry(config_path: &Path, src: &str) -> Result<()> {
-    let contents = std::fs::read_to_string(config_path)
+fn remove_config_entry(config_path: &Path, src: &str, fs: &impl Fs) -> Result<()> {
+    let contents = fs
+        .read_to_string(config_path)
         .with_context(|| format!("Failed to read config: {}", config_path.display()))?;
 
     let mut doc = contents
@@ -144,7 +148,7 @@ fn remove_config_entry(config_path: &Path, src: &str) -> Result<()> {
         }
     }
 
-    std::fs::write(config_path, doc.to_string())
+    fs.write(config_path, doc.to_string().as_bytes())
         .with_context(|| format!("Failed to write config: {}", config_path.display()))?;
 
     debug!("Removed config entry: src={}", src);
@@ -152,13 +156,13 @@ fn remove_config_entry(config_path: &Path, src: &str) -> Result<()> {
 }
 
 /// Remove empty parent directories up to (but not including) the stop directory.
-fn remove_empty_parents(path: &Path, stop_at: &Path) {
+fn remove_empty_parents(path: &Path, stop_at: &Path, fs: &impl Fs) {
     let mut current = path.parent();
     while let Some(dir) = current {
         if dir == stop_at {
             break;
         }
-        if std::fs::remove_dir(dir).is_err() {
+        if fs.remove_dir(dir).is_err() {
             break; // Not empty or other error, stop
         }
         current = dir.parent();

@@ -10,6 +10,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
+use crate::platform::Fs;
+
 /// Structured recovery instructions emitted when a state save fails after a
 /// mutation has already been applied to the filesystem.
 ///
@@ -73,15 +75,16 @@ impl State {
 
     /// Load state from `.janus_state.toml` in the given dotfiles directory.
     /// Returns a default empty state if the file doesn't exist yet.
-    pub fn load(dotfiles_dir: &Path) -> Result<Self> {
+    pub fn load(dotfiles_dir: &Path, fs: &impl Fs) -> Result<Self> {
         let path = dotfiles_dir.join(".janus_state.toml");
-        if !path.exists() {
+        if !fs.exists(&path) {
             return Ok(State {
                 path,
                 ..Default::default()
             });
         }
-        let contents = std::fs::read_to_string(&path)
+        let contents = fs
+            .read_to_string(&path)
             .with_context(|| format!("Failed to read state file: {}", path.display()))?;
         let mut state: State =
             toml::from_str(&contents).with_context(|| "Failed to parse state file")?;
@@ -91,9 +94,9 @@ impl State {
     }
 
     /// Serialize and write the state file to disk.
-    pub fn save(&self) -> Result<()> {
+    pub fn save(&self, fs: &impl Fs) -> Result<()> {
         let contents = toml::to_string_pretty(self).with_context(|| "Failed to serialize state")?;
-        std::fs::write(&self.path, contents)
+        fs.write(&self.path, contents.as_bytes())
             .with_context(|| format!("Failed to write state file: {}", self.path.display()))?;
         Ok(())
     }
@@ -102,8 +105,8 @@ impl State {
     ///
     /// Use this after a filesystem mutation (deploy, undeploy) so that if the
     /// save fails, the user gets actionable instructions to fix the desync.
-    pub fn save_with_recovery(&self, recovery: RecoveryInfo) -> Result<()> {
-        if let Err(e) = self.save() {
+    pub fn save_with_recovery(&self, recovery: RecoveryInfo, fs: &impl Fs) -> Result<()> {
+        if let Err(e) = self.save(fs) {
             warn!("Situation:");
             for line in &recovery.situation {
                 warn!("  - {line}");

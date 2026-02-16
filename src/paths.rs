@@ -5,17 +5,19 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::platform::Fs;
+
 /// Expand `~` or `~/...` at the start of a path to the user's home directory.
 ///
 /// Returns the path unchanged if it doesn't start with `~` or if the home
 /// directory cannot be determined.
-pub fn expand_tilde(path: &str) -> PathBuf {
+pub fn expand_tilde(path: &str, fs: &impl Fs) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = dirs::home_dir() {
+        if let Some(home) = fs.home_dir() {
             return home.join(rest);
         }
     } else if path == "~"
-        && let Some(home) = dirs::home_dir()
+        && let Some(home) = fs.home_dir()
     {
         return home;
     }
@@ -26,8 +28,8 @@ pub fn expand_tilde(path: &str) -> PathBuf {
 ///
 /// Returns the full path string if the home directory cannot be determined
 /// or the path is not under it.
-pub fn collapse_tilde(path: &Path) -> String {
-    if let Some(home) = dirs::home_dir()
+pub fn collapse_tilde(path: &Path, fs: &impl Fs) -> String {
+    if let Some(home) = fs.home_dir()
         && let Ok(rest) = path.strip_prefix(&home)
     {
         return format!("~/{}", rest.display());

@@ -1,7 +1,10 @@
 //! Real filesystem implementation delegating to `std::fs`, `std::os::unix::fs`,
 //! `walkdir`, and `dirs`.
+//!
+//! Methods return bare errors without added context — callers add their own
+//! `.with_context()` messages for domain-specific error descriptions.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -13,79 +16,55 @@ pub struct RealFs;
 
 impl Fs for RealFs {
     fn read_to_string(&self, path: &Path) -> Result<String> {
-        std::fs::read_to_string(path)
-            .with_context(|| format!("Failed to read file: {}", path.display()))
+        Ok(std::fs::read_to_string(path)?)
     }
 
     fn read(&self, path: &Path) -> Result<Vec<u8>> {
-        std::fs::read(path).with_context(|| format!("Failed to read file: {}", path.display()))
+        Ok(std::fs::read(path)?)
     }
 
     fn write(&self, path: &Path, contents: &[u8]) -> Result<()> {
-        std::fs::write(path, contents)
-            .with_context(|| format!("Failed to write file: {}", path.display()))
+        Ok(std::fs::write(path, contents)?)
     }
 
     fn copy(&self, from: &Path, to: &Path) -> Result<()> {
-        std::fs::copy(from, to).with_context(|| {
-            format!(
-                "Failed to copy {} -> {}",
-                from.display(),
-                to.display()
-            )
-        })?;
+        std::fs::copy(from, to)?;
         Ok(())
     }
 
     fn remove_file(&self, path: &Path) -> Result<()> {
-        std::fs::remove_file(path)
-            .with_context(|| format!("Failed to remove file: {}", path.display()))
+        Ok(std::fs::remove_file(path)?)
     }
 
     fn remove_dir(&self, path: &Path) -> Result<()> {
-        std::fs::remove_dir(path)
-            .with_context(|| format!("Failed to remove directory: {}", path.display()))
+        Ok(std::fs::remove_dir(path)?)
     }
 
     fn rename(&self, from: &Path, to: &Path) -> Result<()> {
-        std::fs::rename(from, to).with_context(|| {
-            format!(
-                "Failed to rename {} -> {}",
-                from.display(),
-                to.display()
-            )
-        })
+        Ok(std::fs::rename(from, to)?)
     }
 
     fn create_dir_all(&self, path: &Path) -> Result<()> {
-        std::fs::create_dir_all(path)
-            .with_context(|| format!("Failed to create directory: {}", path.display()))
+        Ok(std::fs::create_dir_all(path)?)
     }
 
     fn file_mode(&self, path: &Path) -> Result<u32> {
-        let metadata = std::fs::metadata(path)
-            .with_context(|| format!("Failed to read metadata: {}", path.display()))?;
-        Ok(metadata.permissions().mode())
+        Ok(std::fs::metadata(path)?.permissions().mode())
     }
 
     fn set_file_mode(&self, path: &Path, mode: u32) -> Result<()> {
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
-            .with_context(|| format!("Failed to set permissions: {}", path.display()))
+        Ok(std::fs::set_permissions(
+            path,
+            std::fs::Permissions::from_mode(mode),
+        )?)
     }
 
     fn symlink(&self, original: &Path, link: &Path) -> Result<()> {
-        std::os::unix::fs::symlink(original, link).with_context(|| {
-            format!(
-                "Failed to create symlink: {} -> {}",
-                link.display(),
-                original.display()
-            )
-        })
+        Ok(std::os::unix::fs::symlink(original, link)?)
     }
 
     fn read_link(&self, path: &Path) -> Result<PathBuf> {
-        std::fs::read_link(path)
-            .with_context(|| format!("Failed to read symlink: {}", path.display()))
+        Ok(std::fs::read_link(path)?)
     }
 
     fn exists(&self, path: &Path) -> bool {

@@ -9,12 +9,13 @@ use similar::{ChangeTag, TextDiff};
 use tracing::info;
 
 use crate::config::Config;
+use crate::platform::Fs;
 
 /// Display diffs between generated and staged versions of the given files.
 ///
 /// Files with no diff are silently skipped. Missing generated or staged files
 /// are reported but don't cause an error.
-pub fn run(config: &Config, files: Option<&[String]>) -> Result<()> {
+pub fn run(config: &Config, files: Option<&[String]>, fs: &impl Fs) -> Result<()> {
     let entries = config.filter_files(files);
     if entries.is_empty() {
         config.bail_unmatched(files)?;
@@ -22,33 +23,34 @@ pub fn run(config: &Config, files: Option<&[String]>) -> Result<()> {
         return Ok(());
     }
 
-    let generated_dir = config.generated_dir();
-    let staged_dir = config.staged_dir();
+    let generated_dir = config.generated_dir(fs);
+    let staged_dir = config.staged_dir(fs);
     let mut any_diff = false;
 
     for entry in &entries {
         let generated_path = generated_dir.join(&entry.src);
         let staged_path = staged_dir.join(&entry.src);
 
-        if !generated_path.exists() {
+        if !fs.exists(&generated_path) {
             info!(
                 "{}: no generated file (run `janus generate` first)",
                 entry.src
             );
             continue;
         }
-        if !staged_path.exists() {
+        if !fs.exists(&staged_path) {
             info!("{}: no staged file (run `janus stage` first)", entry.src);
             continue;
         }
 
-        let generated_content = std::fs::read_to_string(&generated_path).with_context(|| {
+        let generated_content = fs.read_to_string(&generated_path).with_context(|| {
             format!(
                 "Failed to read generated file: {}",
                 generated_path.display()
             )
         })?;
-        let staged_content = std::fs::read_to_string(&staged_path)
+        let staged_content = fs
+            .read_to_string(&staged_path)
             .with_context(|| format!("Failed to read staged file: {}", staged_path.display()))?;
 
         if generated_content == staged_content {

@@ -9,27 +9,32 @@
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use tera::Tera;
 use tracing::{debug, info, trace, warn};
 
 use crate::config::{Config, FileEntry};
+use crate::platform::{Fs, SecretEngine};
 use crate::secrets::{self, SecretEntry, SecretResolver};
 
 /// Load template variables from one or more TOML files in the dotfiles directory.
 ///
 /// Later files override earlier ones. Missing files are silently skipped.
-fn load_vars(dotfiles_dir: &Path, var_files: &[String]) -> Result<HashMap<String, toml::Value>> {
+fn load_vars(
+    dotfiles_dir: &Path,
+    var_files: &[String],
+    fs: &impl Fs,
+) -> Result<HashMap<String, toml::Value>> {
     let mut vars = HashMap::new();
     for var_file in var_files {
         let path = dotfiles_dir.join(var_file);
-        if !path.exists() {
+        if !fs.exists(&path) {
             debug!("Vars file not found, skipping: {}", path.display());
             continue;
         }
         debug!("Loading vars from {}", path.display());
-        let contents = std::fs::read_to_string(&path)
+        let contents = fs
+            .read_to_string(&path)
             .with_context(|| format!("Failed to read vars file: {}", path.display()))?;
         let table: HashMap<String, toml::Value> = toml::from_str(&contents)
             .with_context(|| format!("Failed to parse vars file: {}", path.display()))?;
@@ -52,7 +57,13 @@ fn vars_to_tera_context(vars: &HashMap<String, toml::Value>) -> Result<tera::Con
 ///
 /// Collects per-file errors and reports them at the end. Returns an error
 /// if any file failed to generate.
-pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<()> {
+pub fn run(
+    config: &Config,
+    files: Option<&[String]>,
+    dry_run: bool,
+    fs: &impl Fs,
+    engine: &impl SecretEngine,
+) -> Result<()> {
     let entries = config.filter_files(files);
     if entries.is_empty() {
         config.bail_unmatched(files)?;
@@ -60,14 +71,14 @@ pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<(
         return Ok(());
     }
 
-    let dotfiles_dir = config.dotfiles_dir();
-    let generated_dir = config.generated_dir();
+    let dotfiles_dir = config.dotfiles_dir(fs);
+    let generated_dir = config.generated_dir(fs);
 
     // Load global vars
-    let global_vars = load_vars(&dotfiles_dir, &config.vars)?;
+    let global_vars = load_vars(&dotfiles_dir, &config.vars, fs)?;
 
     // Parse global secret entries (cheap TOML reads, no op calls yet)
-    let global_secret_entries = secrets::parse_secret_files(&dotfiles_dir, &config.secrets)?;
+    let global_secret_entries = secrets::parse_secret_files(&dotfiles_dir, &config.secrets, fs)?;
 
     // Shared resolver caches op read results across all files
     let mut resolver = SecretResolver::new();
@@ -85,6 +96,8 @@ pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<(
             &global_secret_entries,
             &mut resolver,
             dry_run,
+            fs,
+            engine,
         ) {
             Ok(()) => succeeded += 1,
             Err(e) => {
@@ -123,11 +136,13 @@ fn generate_file(
     global_secret_entries: &[SecretEntry],
     resolver: &mut SecretResolver,
     dry_run: bool,
+    fs: &impl Fs,
+    engine: &impl SecretEngine,
 ) -> Result<()> {
     let src_path = dotfiles_dir.join(&entry.src);
     let dest_path = generated_dir.join(&entry.src);
 
-    if !src_path.exists() {
+    if !fs.exists(&src_path) {
         anyhow::bail!("Source file not found: {}", src_path.display());
     }
 
@@ -138,7 +153,7 @@ fn generate_file(
 
     // Ensure parent directory exists
     if let Some(parent) = dest_path.parent() {
-        std::fs::create_dir_all(parent)
+        fs.create_dir_all(parent)
             .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
     }
 
@@ -146,35 +161,36 @@ fn generate_file(
         // Look up matching filesets for this file
         let matching_filesets = config.matching_filesets(&entry.src);
 
-        // Build vars: global → fileset → per-file (later wins)
+        // Build vars: global -> fileset -> per-file (later wins)
         let mut vars = global_vars.clone();
         for fileset in &matching_filesets {
             if !fileset.vars.is_empty() {
-                let fileset_vars = load_vars(dotfiles_dir, &fileset.vars)?;
+                let fileset_vars = load_vars(dotfiles_dir, &fileset.vars, fs)?;
                 vars.extend(fileset_vars);
             }
         }
         if !entry.vars.is_empty() {
-            let local_vars = load_vars(dotfiles_dir, &entry.vars)?;
+            let local_vars = load_vars(dotfiles_dir, &entry.vars, fs)?;
             vars.extend(local_vars);
         }
 
-        // Build secret entries: global → fileset → per-file
+        // Build secret entries: global -> fileset -> per-file
         let mut secret_entries: Vec<SecretEntry> = global_secret_entries.to_vec();
         for fileset in &matching_filesets {
             if !fileset.secrets.is_empty() {
-                let fileset_secrets = secrets::parse_secret_files(dotfiles_dir, &fileset.secrets)?;
+                let fileset_secrets =
+                    secrets::parse_secret_files(dotfiles_dir, &fileset.secrets, fs)?;
                 secret_entries.extend(fileset_secrets);
             }
         }
         if !entry.secrets.is_empty() {
-            let file_secrets = secrets::parse_secret_files(dotfiles_dir, &entry.secrets)?;
+            let file_secrets = secrets::parse_secret_files(dotfiles_dir, &entry.secrets, fs)?;
             secret_entries.extend(file_secrets);
         }
 
         // Resolve secrets (lazy - only calls op read for uncached references)
         let resolved_secrets = if !secret_entries.is_empty() {
-            secrets::resolve_secrets(&secret_entries, resolver)?
+            secrets::resolve_secrets(&secret_entries, resolver, engine)?
         } else {
             HashMap::new()
         };
@@ -186,28 +202,27 @@ fn generate_file(
         }
 
         let context = vars_to_tera_context(&vars)?;
-        let template_content = std::fs::read_to_string(&src_path)
+        let template_content = fs
+            .read_to_string(&src_path)
             .with_context(|| format!("Failed to read template: {}", src_path.display()))?;
 
         let rendered = Tera::one_off(&template_content, &context, false)
             .with_context(|| format!("Failed to render template: {}", entry.src))?;
 
-        std::fs::write(&dest_path, rendered)
+        fs.write(&dest_path, rendered.as_bytes())
             .with_context(|| format!("Failed to write generated file: {}", dest_path.display()))?;
     } else {
         // Copy as-is
-        std::fs::copy(&src_path, &dest_path)
+        fs.copy(&src_path, &dest_path)
             .with_context(|| format!("Failed to copy file: {}", entry.src))?;
     }
 
     // Preserve file permissions
-    let metadata = std::fs::metadata(&src_path)
+    let mode = fs
+        .file_mode(&src_path)
         .with_context(|| format!("Failed to read metadata: {}", src_path.display()))?;
-    std::fs::set_permissions(
-        &dest_path,
-        std::fs::Permissions::from_mode(metadata.permissions().mode()),
-    )
-    .with_context(|| format!("Failed to set permissions: {}", dest_path.display()))?;
+    fs.set_file_mode(&dest_path, mode)
+        .with_context(|| format!("Failed to set permissions: {}", dest_path.display()))?;
 
     info!("Generated {}", entry.src);
     Ok(())

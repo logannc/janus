@@ -56,6 +56,7 @@ pub struct DirEntry {
     /// Whether this is a directory (follows symlinks per `WalkOptions::follow_links`).
     pub is_dir: bool,
     /// Whether the path itself is a symbolic link (always raw lstat, regardless of follow_links).
+    #[allow(dead_code)]
     pub is_symlink: bool,
 }
 
@@ -121,6 +122,7 @@ pub trait Fs {
     fn is_symlink(&self, path: &Path) -> bool;
 
     /// Check if a path is a regular file (follows symlinks).
+    #[allow(dead_code)]
     fn is_file(&self, path: &Path) -> bool;
 
     /// Check if a path is a directory (follows symlinks).

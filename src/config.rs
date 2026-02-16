@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use strsim::jaro_winkler;
 
 use crate::paths::expand_tilde;
+use crate::platform::Fs;
 
 /// Top-level janus configuration, loaded from a TOML file.
 #[derive(Debug, Deserialize, Serialize)]
@@ -77,8 +78,9 @@ fn default_true() -> bool {
 
 impl Config {
     /// Load and parse a config file from the given path.
-    pub fn load(path: &Path) -> Result<Self> {
-        let contents = std::fs::read_to_string(path)
+    pub fn load(path: &Path, fs: &impl Fs) -> Result<Self> {
+        let contents = fs
+            .read_to_string(path)
             .with_context(|| format!("Failed to read config file: {}", path.display()))?;
         let config: Config =
             toml::from_str(&contents).with_context(|| "Failed to parse config file")?;
@@ -86,26 +88,26 @@ impl Config {
     }
 
     /// Return the default config file path.
-    pub fn default_path() -> PathBuf {
-        dirs::config_dir()
-            .unwrap_or_else(|| expand_tilde("~/.config"))
+    pub fn default_path(fs: &impl Fs) -> PathBuf {
+        fs.config_dir()
+            .unwrap_or_else(|| expand_tilde("~/.config", fs))
             .join("janus")
             .join("config.toml")
     }
 
     /// Return the expanded dotfiles directory path.
-    pub fn dotfiles_dir(&self) -> PathBuf {
-        expand_tilde(&self.dotfiles_dir)
+    pub fn dotfiles_dir(&self, fs: &impl Fs) -> PathBuf {
+        expand_tilde(&self.dotfiles_dir, fs)
     }
 
     /// Return the .generated directory path.
-    pub fn generated_dir(&self) -> PathBuf {
-        self.dotfiles_dir().join(".generated")
+    pub fn generated_dir(&self, fs: &impl Fs) -> PathBuf {
+        self.dotfiles_dir(fs).join(".generated")
     }
 
     /// Return the .staged directory path.
-    pub fn staged_dir(&self) -> PathBuf {
-        self.dotfiles_dir().join(".staged")
+    pub fn staged_dir(&self, fs: &impl Fs) -> PathBuf {
+        self.dotfiles_dir(fs).join(".staged")
     }
 
     /// Resolve fileset names to their constituent file/glob patterns.

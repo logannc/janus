@@ -9,16 +9,21 @@
 //! at the end rather than bailing on the first error.
 
 use anyhow::{Context, Result};
-use dialoguer::Select;
 use similar::DiffOp;
 use std::collections::HashSet;
-use std::os::unix::fs::PermissionsExt;
 use tracing::{debug, info, warn};
 
 use crate::config::{Config, FileEntry};
+use crate::platform::{Fs, Prompter};
 
 /// Run interactive sync for the given file patterns (or all files).
-pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<()> {
+pub fn run(
+    config: &Config,
+    files: Option<&[String]>,
+    dry_run: bool,
+    fs: &impl Fs,
+    prompter: &impl Prompter,
+) -> Result<()> {
     let entries = config.filter_files(files);
     if entries.is_empty() {
         config.bail_unmatched(files)?;
@@ -29,7 +34,7 @@ pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool) -> Result<(
     let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
     let mut modified = 0usize;
     for entry in &entries {
-        match sync_file(config, entry, dry_run) {
+        match sync_file(config, entry, dry_run, fs, prompter) {
             Ok(true) => modified += 1,
             Ok(false) => {}
             Err(e) => {
@@ -83,31 +88,40 @@ fn split_lines_inclusive(text: &str) -> Vec<&str> {
 }
 
 /// Sync a single file. Returns `Ok(true)` if the source was modified.
-fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> {
-    let dotfiles_dir = config.dotfiles_dir();
-    let generated_dir = config.generated_dir();
-    let staged_dir = config.staged_dir();
+fn sync_file(
+    config: &Config,
+    entry: &FileEntry,
+    dry_run: bool,
+    fs: &impl Fs,
+    prompter: &impl Prompter,
+) -> Result<bool> {
+    let dotfiles_dir = config.dotfiles_dir(fs);
+    let generated_dir = config.generated_dir(fs);
+    let staged_dir = config.staged_dir(fs);
 
     let source_path = dotfiles_dir.join(&entry.src);
     let generated_path = generated_dir.join(&entry.src);
     let staged_path = staged_dir.join(&entry.src);
 
     // Read all three versions
-    if !generated_path.exists() {
+    if !fs.exists(&generated_path) {
         anyhow::bail!("no generated file (run `janus generate` first)");
     }
-    if !staged_path.exists() {
+    if !fs.exists(&staged_path) {
         anyhow::bail!("no staged file (run `janus stage` first)");
     }
-    if !source_path.exists() {
+    if !fs.exists(&source_path) {
         anyhow::bail!("source file not found: {}", source_path.display());
     }
 
-    let source = std::fs::read_to_string(&source_path)
+    let source = fs
+        .read_to_string(&source_path)
         .with_context(|| format!("Failed to read source: {}", source_path.display()))?;
-    let generated = std::fs::read_to_string(&generated_path)
+    let generated = fs
+        .read_to_string(&generated_path)
         .with_context(|| format!("Failed to read generated: {}", generated_path.display()))?;
-    let staged = std::fs::read_to_string(&staged_path)
+    let staged = fs
+        .read_to_string(&staged_path)
         .with_context(|| format!("Failed to read staged: {}", staged_path.display()))?;
 
     // No changes to sync
@@ -193,12 +207,8 @@ fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> 
                 } else {
                     print_insert_hunk(&entry.src, hunk_num, total_hunks, new_index, staged_range);
 
-                    let selection = Select::new()
-                        .with_prompt("Action")
-                        .items(&["Apply", "Skip"])
-                        .default(0)
-                        .interact()
-                        .context("Failed to get user input")?;
+                    let selection =
+                        prompter.select("Action", &["Apply", "Skip"], 0)?;
 
                     if selection == 0 {
                         for line in staged_range {
@@ -270,12 +280,11 @@ fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> 
                         &classification,
                     );
 
-                    let selection = Select::new()
-                        .with_prompt("Action")
-                        .items(&["Apply (delete lines)", "Skip (keep source)"])
-                        .default(default_idx)
-                        .interact()
-                        .context("Failed to get user input")?;
+                    let selection = prompter.select(
+                        "Action",
+                        &["Apply (delete lines)", "Skip (keep source)"],
+                        default_idx,
+                    )?;
 
                     if selection == 0 {
                         // Apply = delete these lines (don't add them to output)
@@ -354,12 +363,11 @@ fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> 
                         &classification,
                     );
 
-                    let selection = Select::new()
-                        .with_prompt("Action")
-                        .items(&["Apply (take staged)", "Skip (keep source)"])
-                        .default(default_idx)
-                        .interact()
-                        .context("Failed to get user input")?;
+                    let selection = prompter.select(
+                        "Action",
+                        &["Apply (take staged)", "Skip (keep source)"],
+                        default_idx,
+                    )?;
 
                     if selection == 0 {
                         for line in staged_range {
@@ -387,15 +395,13 @@ fn sync_file(config: &Config, entry: &FileEntry, dry_run: bool) -> Result<bool> 
 
     // Write updated source
     let output: String = output_lines.concat();
-    let metadata = std::fs::metadata(&source_path)
+    let mode = fs
+        .file_mode(&source_path)
         .with_context(|| format!("Failed to read metadata: {}", source_path.display()))?;
-    std::fs::write(&source_path, &output)
+    fs.write(&source_path, output.as_bytes())
         .with_context(|| format!("Failed to write source: {}", source_path.display()))?;
-    std::fs::set_permissions(
-        &source_path,
-        std::fs::Permissions::from_mode(metadata.permissions().mode()),
-    )
-    .with_context(|| format!("Failed to set permissions: {}", source_path.display()))?;
+    fs.set_file_mode(&source_path, mode)
+        .with_context(|| format!("Failed to set permissions: {}", source_path.display()))?;
 
     info!("Updated source: {}", entry.src);
     Ok(true)

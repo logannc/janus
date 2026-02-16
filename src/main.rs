@@ -1,6 +1,6 @@
 //! Janus — a two-way dotfile manager.
 //!
-//! Provides a three-stage pipeline (generate → stage → deploy) for managing
+//! Provides a three-stage pipeline (generate -> stage -> deploy) for managing
 //! dotfiles with template rendering, plus reverse operations (import, undeploy,
 //! unimport) for bringing existing configs under management or removing them.
 
@@ -18,6 +18,7 @@ use tracing_subscriber::EnvFilter;
 
 use cli::{Cli, Command};
 use config::Config;
+use platform::{RealFs, RealPrompter, RealSecretEngine};
 
 /// Resolve file selection from explicit files, `--all`, or `--filesets`.
 ///
@@ -71,13 +72,17 @@ fn main() -> Result<()> {
         .without_time()
         .init();
 
+    let fs = RealFs;
+    let engine = RealSecretEngine;
+    let prompter = RealPrompter;
+
     match cli.command {
         Command::Init { dotfiles_dir } => {
-            ops::init::run(&dotfiles_dir, cli.dry_run)?;
+            ops::init::run(&dotfiles_dir, cli.dry_run, &fs)?;
         }
         command => {
-            let config_path = cli.config.unwrap_or_else(Config::default_path);
-            let config = Config::load(&config_path)?;
+            let config_path = cli.config.unwrap_or_else(|| Config::default_path(&fs));
+            let config = Config::load(&config_path, &fs)?;
 
             match command {
                 Command::Generate {
@@ -86,7 +91,7 @@ fn main() -> Result<()> {
                     filesets,
                 } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
-                    ops::generate::run(&config, files.as_deref(), cli.dry_run)?;
+                    ops::generate::run(&config, files.as_deref(), cli.dry_run, &fs, &engine)?;
                 }
                 Command::Stage {
                     files,
@@ -94,7 +99,7 @@ fn main() -> Result<()> {
                     filesets,
                 } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
-                    ops::stage::run(&config, files.as_deref(), cli.dry_run)?;
+                    ops::stage::run(&config, files.as_deref(), cli.dry_run, &fs)?;
                 }
                 Command::Deploy {
                     files,
@@ -103,7 +108,7 @@ fn main() -> Result<()> {
                     filesets,
                 } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
-                    ops::deploy::run(&config, files.as_deref(), force, cli.dry_run)?;
+                    ops::deploy::run(&config, files.as_deref(), force, cli.dry_run, &fs)?;
                 }
                 Command::Diff {
                     files,
@@ -111,17 +116,27 @@ fn main() -> Result<()> {
                     filesets,
                 } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
-                    ops::diff::run(&config, files.as_deref())?;
+                    ops::diff::run(&config, files.as_deref(), &fs)?;
                 }
                 Command::Clean { generated, orphans } => {
-                    ops::clean::run(&config, generated, orphans, cli.dry_run)?;
+                    ops::clean::run(&config, generated, orphans, cli.dry_run, &fs)?;
                 }
                 Command::Import {
                     path,
                     all,
                     max_depth,
                 } => {
-                    ops::import::run(&config, &config_path, &path, all, max_depth, cli.dry_run)?;
+                    ops::import::run(
+                        &config,
+                        &config_path,
+                        &path,
+                        all,
+                        max_depth,
+                        cli.dry_run,
+                        &fs,
+                        &engine,
+                        &prompter,
+                    )?;
                 }
                 Command::Apply {
                     files,
@@ -130,7 +145,14 @@ fn main() -> Result<()> {
                     filesets,
                 } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
-                    ops::apply::run(&config, files.as_deref(), force, cli.dry_run)?;
+                    ops::apply::run(
+                        &config,
+                        files.as_deref(),
+                        force,
+                        cli.dry_run,
+                        &fs,
+                        &engine,
+                    )?;
                 }
                 Command::Undeploy {
                     files,
@@ -139,7 +161,13 @@ fn main() -> Result<()> {
                     filesets,
                 } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
-                    ops::undeploy::run(&config, files.as_deref(), remove_file, cli.dry_run)?;
+                    ops::undeploy::run(
+                        &config,
+                        files.as_deref(),
+                        remove_file,
+                        cli.dry_run,
+                        &fs,
+                    )?;
                 }
                 Command::Unimport {
                     files,
@@ -157,7 +185,14 @@ fn main() -> Result<()> {
                         }
                         files
                     };
-                    ops::unimport::run(&config, &config_path, &files, remove_file, cli.dry_run)?;
+                    ops::unimport::run(
+                        &config,
+                        &config_path,
+                        &files,
+                        remove_file,
+                        cli.dry_run,
+                        &fs,
+                    )?;
                 }
                 Command::Sync {
                     files,
@@ -165,7 +200,13 @@ fn main() -> Result<()> {
                     filesets,
                 } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
-                    ops::sync::run(&config, files.as_deref(), cli.dry_run)?;
+                    ops::sync::run(
+                        &config,
+                        files.as_deref(),
+                        cli.dry_run,
+                        &fs,
+                        &prompter,
+                    )?;
                 }
                 Command::Status {
                     files,
@@ -184,6 +225,7 @@ fn main() -> Result<()> {
                             deployed,
                             undeployed,
                         },
+                        &fs,
                     )?;
                 }
                 Command::Init { .. } => unreachable!(),
