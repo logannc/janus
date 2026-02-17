@@ -44,6 +44,7 @@ use std::path::{Path, PathBuf};
 
 /// Options for directory traversal via [`Fs::walk_dir`].
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct WalkOptions {
     /// Maximum depth to recurse. `None` means unlimited.
     pub max_depth: Option<usize>,
@@ -55,16 +56,6 @@ pub struct WalkOptions {
     pub contents_first: bool,
 }
 
-impl Default for WalkOptions {
-    fn default() -> Self {
-        Self {
-            max_depth: None,
-            min_depth: 0,
-            follow_links: false,
-            contents_first: false,
-        }
-    }
-}
 
 /// A single entry returned by [`Fs::walk_dir`].
 #[derive(Debug, Clone)]

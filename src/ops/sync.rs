@@ -717,6 +717,7 @@ mod tests {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn print_replace_hunk(
     src: &str,
     hunk_num: usize,

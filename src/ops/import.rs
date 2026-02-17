@@ -21,6 +21,7 @@ use crate::state::{RecoveryInfo, State};
 ///
 /// If `import_all` is true, skips interactive prompts and imports everything.
 /// Each imported file is immediately deployed (generate -> stage -> deploy).
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     config: &Config,
     config_path: &Path,
@@ -136,6 +137,7 @@ pub fn run(
 }
 
 /// Import a single file: copy to dotfiles dir, add config entry, run pipeline.
+#[allow(clippy::too_many_arguments)]
 fn import_file(
     file_path: &Path,
     target_str: &str,
