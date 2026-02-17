@@ -159,7 +159,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::Init { dotfiles_dir } => {
-            ops::init::run(&dotfiles_dir, cli.dry_run, &fs)?;
+            ops::init::run(&dotfiles_dir, cli.dry_run, &fs, &engine)?;
         }
         command => {
             let config_path = cli.config.unwrap_or_else(|| Config::default_path(&fs));
