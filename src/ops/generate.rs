@@ -534,9 +534,7 @@ vars = ["fs-vars.toml"]
         );
         let config = write_and_load_config(&fs, &toml);
         run(&config, None, false, &fs, &make_engine()).unwrap();
-        assert!(!fs.exists(Path::new(&format!(
-            "{DOTFILES}/.generated/direct.conf"
-        ))));
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/.generated/direct.conf"))));
     }
 
     #[test]

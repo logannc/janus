@@ -97,8 +97,7 @@ pub fn compute(
             let staged_path = staged_dir.join(src);
             let deployed =
                 state.is_deployed(src) && is_janus_symlink(&target_path, &staged_path, fs);
-            let detail =
-                compute_detail(&source_path, &generated_path, &staged_path, deployed, fs);
+            let detail = compute_detail(&source_path, &generated_path, &staged_path, deployed, fs);
             let changed_lines = count_changed_lines(&generated_path, &staged_path, fs);
             (deployed, detail, changed_lines)
         };

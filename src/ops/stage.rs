@@ -196,8 +196,6 @@ mod tests {
         );
         let config = write_and_load_config(&fs, &toml);
         run(&config, None, false, &fs).unwrap();
-        assert!(!fs.exists(Path::new(&format!(
-            "{DOTFILES}/.staged/direct.conf"
-        ))));
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/.staged/direct.conf"))));
     }
 }
