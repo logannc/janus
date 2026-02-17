@@ -16,7 +16,7 @@ mod state;
 mod test_helpers;
 
 use anyhow::{Result, bail};
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use tracing_subscriber::EnvFilter;
 
 use cli::{Cli, Command};
@@ -85,6 +85,10 @@ fn main() -> Result<()> {
                 bail!("--config cannot be used with init (init creates the config)");
             }
             ops::init::run(&dotfiles_dir, cli.dry_run, &fs, &engine)?;
+        }
+        Command::Completions { shell } => {
+            let mut cmd = Cli::command();
+            clap_complete::generate(shell, &mut cmd, "janus", &mut std::io::stdout());
         }
         command => {
             let config_path = cli.config.unwrap_or_else(|| Config::default_path(&fs));
@@ -215,7 +219,7 @@ fn main() -> Result<()> {
                         &fs,
                     )?;
                 }
-                Command::Init { .. } => unreachable!(),
+                Command::Init { .. } | Command::Completions { .. } => unreachable!(),
             }
         }
     }

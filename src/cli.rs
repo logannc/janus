@@ -4,6 +4,7 @@
 //! available subcommands. Each variant's fields map directly to CLI arguments.
 
 use clap::{Parser, Subcommand};
+use clap_complete::Shell;
 use std::path::PathBuf;
 
 /// Top-level CLI arguments shared across all subcommands.
@@ -187,6 +188,12 @@ pub enum Command {
         /// Filesets to operate on (comma-separated)
         #[arg(long, value_delimiter = ',')]
         filesets: Vec<String>,
+    },
+
+    /// Generate shell completions
+    Completions {
+        /// Shell to generate completions for
+        shell: Shell,
     },
 
     /// Show pipeline status for managed files
