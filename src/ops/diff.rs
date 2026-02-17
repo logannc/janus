@@ -6,7 +6,7 @@
 
 use anyhow::{Context, Result};
 use similar::{ChangeTag, TextDiff};
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::config::Config;
 use crate::platform::Fs;
@@ -47,6 +47,10 @@ pub fn compute(config: &Config, files: Option<&[String]>, fs: &impl Fs) -> Resul
     let mut results = Vec::new();
 
     for entry in &entries {
+        if entry.direct {
+            debug!("Skipping direct file: {}", entry.src);
+            continue;
+        }
         let generated_path = generated_dir.join(&entry.src);
         let staged_path = staged_dir.join(&entry.src);
 
@@ -236,5 +240,18 @@ mod tests {
         assert!(matches!(results[0].kind, DiffKind::Identical));
         assert!(matches!(results[1].kind, DiffKind::Changed(_)));
         assert!(matches!(results[2].kind, DiffKind::MissingGenerated));
+    }
+
+    #[test]
+    fn direct_files_skipped() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.generated/direct.conf"), "old\n");
+        fs.add_file(format!("{DOTFILES}/.staged/direct.conf"), "new\n");
+        let toml = format!(
+            "dotfiles_dir = \"{DOTFILES}\"\nvars = [\"vars.toml\"]\n\n[[files]]\nsrc = \"direct.conf\"\ndirect = true\ntemplate = false\n"
+        );
+        let config = write_and_load_config(&fs, &toml);
+        let results = compute(&config, None, &fs).unwrap();
+        assert!(results.is_empty());
     }
 }

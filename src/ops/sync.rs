@@ -34,6 +34,10 @@ pub fn run(
     let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
     let mut modified = 0usize;
     for entry in &entries {
+        if entry.direct {
+            debug!("Skipping direct file: {}", entry.src);
+            continue;
+        }
         match sync_file(config, entry, dry_run, fs, prompter) {
             Ok(true) => modified += 1,
             Ok(false) => {}

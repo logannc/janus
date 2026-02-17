@@ -39,14 +39,25 @@ pub fn run(
     let mut state = State::load(&dotfiles_dir, fs)?;
 
     for entry in &entries {
-        let staged_path = staged_dir.join(&entry.src);
+        let link_source = if entry.direct {
+            dotfiles_dir.join(&entry.src)
+        } else {
+            staged_dir.join(&entry.src)
+        };
         let target_path = expand_tilde(&entry.target(), fs);
 
-        if !fs.exists(&staged_path) {
-            anyhow::bail!(
-                "Staged file not found: {} (run `janus stage` first)",
-                staged_path.display()
-            );
+        if !fs.exists(&link_source) {
+            if entry.direct {
+                anyhow::bail!(
+                    "Source file not found: {} (direct mode)",
+                    link_source.display()
+                );
+            } else {
+                anyhow::bail!(
+                    "Staged file not found: {} (run `janus stage` first)",
+                    link_source.display()
+                );
+            }
         }
 
         if dry_run {
@@ -64,7 +75,7 @@ pub fn run(
                 .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
         }
 
-        deploy_symlink(&staged_path, &target_path, force, fs)?;
+        deploy_symlink(&link_source, &target_path, force, fs)?;
 
         state.add_deployed(entry.src.clone(), entry.target());
         state.save_with_recovery(
@@ -367,5 +378,22 @@ mod tests {
             &staged,
             &fs
         ));
+    }
+
+    #[test]
+    fn direct_file_symlinks_to_source() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/direct.conf"), "source content");
+        let toml = format!(
+            "dotfiles_dir = \"{DOTFILES}\"\nvars = [\"vars.toml\"]\n\n[[files]]\nsrc = \"direct.conf\"\ntarget = \"~/.config/direct.conf\"\ndirect = true\ntemplate = false\n"
+        );
+        let config = write_and_load_config(&fs, &toml);
+        run(&config, None, false, false, &fs).unwrap();
+        let target = Path::new("/home/test/.config/direct.conf");
+        assert!(fs.is_symlink(target));
+        let link_dest = fs.read_link(target).unwrap();
+        assert_eq!(link_dest, PathBuf::from(format!("{DOTFILES}/direct.conf")));
+        let state = State::load(Path::new(DOTFILES), &fs).unwrap();
+        assert!(state.is_deployed("direct.conf"));
     }
 }

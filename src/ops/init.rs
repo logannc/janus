@@ -91,7 +91,7 @@ pub fn run(
     }
     if !fs.exists(&config_src) {
         let default_config = format!(
-            "dotfiles_dir = \"{dotfiles_dir}\"\nvars = [\"vars.toml\"]\n\n[[files]]\nsrc = \"janus/config.toml\"\ntemplate = false\n"
+            "dotfiles_dir = \"{dotfiles_dir}\"\nvars = [\"vars.toml\"]\n\n[[files]]\nsrc = \"janus/config.toml\"\ndirect = true\ntemplate = false\n"
         );
         fs.write(&config_src, default_config.as_bytes())
             .with_context(|| format!("Failed to create config source: {}", config_src.display()))?;
@@ -134,11 +134,11 @@ mod tests {
         assert!(fs.exists(Path::new("/home/test/dotfiles/.janus_state.toml")));
         // Config source exists in dotfiles dir
         assert!(fs.exists(Path::new("/home/test/dotfiles/janus/config.toml")));
-        // Pipeline copies exist
-        assert!(fs.exists(Path::new(
+        // Direct mode: no pipeline copies should exist
+        assert!(!fs.exists(Path::new(
             "/home/test/dotfiles/.generated/janus/config.toml"
         )));
-        assert!(fs.exists(Path::new("/home/test/dotfiles/.staged/janus/config.toml")));
+        assert!(!fs.exists(Path::new("/home/test/dotfiles/.staged/janus/config.toml")));
         // Deployed symlink exists at target
         assert!(fs.exists(Path::new("/home/test/.config/janus/config.toml")));
     }
@@ -180,9 +180,10 @@ mod tests {
         let target = Path::new("/home/test/.config/janus/config.toml");
         assert!(fs.is_symlink(target));
         let link_dest = fs.read_link(target).unwrap();
+        // Direct mode: symlink points to source, not staged
         assert_eq!(
             link_dest,
-            std::path::PathBuf::from("/home/test/dotfiles/.staged/janus/config.toml")
+            std::path::PathBuf::from("/home/test/dotfiles/janus/config.toml")
         );
     }
 
@@ -195,6 +196,7 @@ mod tests {
             .read_to_string(Path::new("/home/test/dotfiles/janus/config.toml"))
             .unwrap();
         assert!(content.contains("src = \"janus/config.toml\""));
+        assert!(content.contains("direct = true"));
         assert!(content.contains("template = false"));
     }
 

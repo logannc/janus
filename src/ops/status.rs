@@ -79,15 +79,29 @@ pub fn compute(
     for entry in &entries {
         let src = &entry.src;
         let source_path = dotfiles_dir.join(src);
-        let generated_path = generated_dir.join(src);
-        let staged_path = staged_dir.join(src);
         let target_path = expand_tilde(&entry.target(), fs);
 
-        let deployed = state.is_deployed(src) && is_janus_symlink(&target_path, &staged_path, fs);
-
-        let detail = compute_detail(&source_path, &generated_path, &staged_path, deployed, fs);
-
-        let changed_lines = count_changed_lines(&generated_path, &staged_path, fs);
+        let (deployed, detail, changed_lines) = if entry.direct {
+            let deployed =
+                state.is_deployed(src) && is_janus_symlink(&target_path, &source_path, fs);
+            let detail = if !fs.exists(&source_path) {
+                "source missing".to_string()
+            } else if deployed {
+                "deployed (direct)".to_string()
+            } else {
+                "ready to deploy (direct)".to_string()
+            };
+            (deployed, detail, 0)
+        } else {
+            let generated_path = generated_dir.join(src);
+            let staged_path = staged_dir.join(src);
+            let deployed =
+                state.is_deployed(src) && is_janus_symlink(&target_path, &staged_path, fs);
+            let detail =
+                compute_detail(&source_path, &generated_path, &staged_path, deployed, fs);
+            let changed_lines = count_changed_lines(&generated_path, &staged_path, fs);
+            (deployed, detail, changed_lines)
+        };
 
         let has_diff =
             detail.contains("diff") || detail.contains("missing") || detail.contains("not yet");
@@ -546,5 +560,39 @@ patterns = ["hypr/*"]
         assert_eq!(result.fileset_summary[0].0, "desktop");
         assert_eq!(result.fileset_summary[0].1, 1); // 1 file changed
         assert!(result.fileset_summary[0].2 > 0); // some lines changed
+    }
+
+    #[test]
+    fn direct_file_deployed() {
+        let fs = setup_fs();
+        let source = format!("{DOTFILES}/direct.conf");
+        fs.add_file(&source, "content");
+        fs.add_symlink("/home/test/.config/direct.conf", &source);
+        let state_toml =
+            "[[deployed]]\nsrc = \"direct.conf\"\ntarget = \"~/.config/direct.conf\"\n";
+        fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
+        let toml = format!(
+            "dotfiles_dir = \"{DOTFILES}\"\nvars = [\"vars.toml\"]\n\n[[files]]\nsrc = \"direct.conf\"\ntarget = \"~/.config/direct.conf\"\ndirect = true\ntemplate = false\n"
+        );
+        let config = write_and_load_config(&fs, &toml);
+        let result = compute(&config, None, &make_filters(false, false, false), &fs).unwrap();
+        assert_eq!(result.statuses.len(), 1);
+        assert!(result.statuses[0].deployed);
+        assert_eq!(result.statuses[0].detail, "deployed (direct)");
+        assert_eq!(result.statuses[0].changed_lines, 0);
+    }
+
+    #[test]
+    fn direct_file_ready() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/direct.conf"), "content");
+        let toml = format!(
+            "dotfiles_dir = \"{DOTFILES}\"\nvars = [\"vars.toml\"]\n\n[[files]]\nsrc = \"direct.conf\"\ntarget = \"~/.config/direct.conf\"\ndirect = true\ntemplate = false\n"
+        );
+        let config = write_and_load_config(&fs, &toml);
+        let result = compute(&config, None, &make_filters(false, false, false), &fs).unwrap();
+        assert_eq!(result.statuses.len(), 1);
+        assert!(!result.statuses[0].deployed);
+        assert_eq!(result.statuses[0].detail, "ready to deploy (direct)");
     }
 }

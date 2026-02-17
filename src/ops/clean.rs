@@ -112,7 +112,13 @@ fn clean_generated(config: &Config, dry_run: bool, fs: &impl Fs) -> Result<Clean
 /// Staged orphans that are still deployed as symlinks are preserved to avoid
 /// breaking live config files.
 fn clean_orphans(config: &Config, dry_run: bool, fs: &impl Fs) -> Result<CleanResult> {
-    let configured_srcs: HashSet<&str> = config.files.iter().map(|f| f.src.as_str()).collect();
+    // Exclude direct files so their stale .generated/.staged artifacts get cleaned up
+    let configured_srcs: HashSet<&str> = config
+        .files
+        .iter()
+        .filter(|f| !f.direct)
+        .map(|f| f.src.as_str())
+        .collect();
 
     let gen_result = clean_orphans_in_dir(
         &config.generated_dir(fs),

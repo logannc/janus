@@ -57,9 +57,14 @@ pub fn run(
 
         // 1. Undeploy if currently deployed
         if state.is_deployed(src) {
+            let link_path = if entry.direct {
+                dotfiles_dir.join(src)
+            } else {
+                staged_dir.join(src)
+            };
             super::undeploy::undeploy_single(
                 src,
-                &staged_dir,
+                &link_path,
                 &target_path,
                 remove_file,
                 &mut state,

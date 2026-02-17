@@ -65,6 +65,9 @@ pub struct FileEntry {
     /// Per-file secret config files that override globals, relative to `dotfiles_dir`.
     #[serde(default)]
     pub secrets: Vec<String>,
+    /// Whether to symlink directly from dotfiles source (skip generate/stage).
+    #[serde(default)]
+    pub direct: bool,
 }
 
 impl FileEntry {
@@ -313,6 +316,7 @@ secrets = ["desktop-secrets.toml"]
             template: true,
             vars: vec![],
             secrets: vec![],
+            direct: false,
         };
         assert_eq!(entry.target(), "~/.config/hypr/hypr.conf");
     }
@@ -325,6 +329,7 @@ secrets = ["desktop-secrets.toml"]
             template: true,
             vars: vec![],
             secrets: vec![],
+            direct: false,
         };
         assert_eq!(entry.target(), "~/.bashrc");
     }
@@ -335,6 +340,25 @@ secrets = ["desktop-secrets.toml"]
         let toml = format!("dotfiles_dir = \"{DOTFILES}\"\n\n[[files]]\nsrc = \"foo.conf\"\n");
         let config = write_and_load_config(&fs, &toml);
         assert!(config.files[0].template);
+    }
+
+    #[test]
+    fn file_entry_direct_defaults_false() {
+        let fs = setup_fs();
+        let toml = format!("dotfiles_dir = \"{DOTFILES}\"\n\n[[files]]\nsrc = \"foo.conf\"\n");
+        let config = write_and_load_config(&fs, &toml);
+        assert!(!config.files[0].direct);
+    }
+
+    #[test]
+    fn file_entry_direct_true_parses() {
+        let fs = setup_fs();
+        let toml = format!(
+            "dotfiles_dir = \"{DOTFILES}\"\n\n[[files]]\nsrc = \"foo.conf\"\ndirect = true\ntemplate = false\n"
+        );
+        let config = write_and_load_config(&fs, &toml);
+        assert!(config.files[0].direct);
+        assert!(!config.files[0].template);
     }
 
     #[test]

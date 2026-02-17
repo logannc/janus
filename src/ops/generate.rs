@@ -87,6 +87,16 @@ pub fn run(
     let mut succeeded = 0usize;
 
     for entry in &entries {
+        if entry.direct {
+            if entry.template {
+                anyhow::bail!(
+                    "{}: direct = true and template = true are mutually exclusive",
+                    entry.src
+                );
+            }
+            debug!("Skipping direct file: {}", entry.src);
+            continue;
+        }
         match generate_file(
             config,
             entry,
@@ -512,5 +522,35 @@ vars = ["fs-vars.toml"]
                 || msg.contains("Failed to render"),
             "got: {msg}"
         );
+    }
+
+    #[test]
+    fn direct_files_skipped() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file(format!("{DOTFILES}/direct.conf"), "content");
+        let toml = format!(
+            "dotfiles_dir = \"{DOTFILES}\"\nvars = [\"vars.toml\"]\n\n[[files]]\nsrc = \"direct.conf\"\ndirect = true\ntemplate = false\n"
+        );
+        let config = write_and_load_config(&fs, &toml);
+        run(&config, None, false, &fs, &make_engine()).unwrap();
+        assert!(!fs.exists(Path::new(&format!(
+            "{DOTFILES}/.generated/direct.conf"
+        ))));
+    }
+
+    #[test]
+    fn direct_and_template_errors() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file(format!("{DOTFILES}/bad.conf"), "content");
+        let toml = format!(
+            "dotfiles_dir = \"{DOTFILES}\"\nvars = [\"vars.toml\"]\n\n[[files]]\nsrc = \"bad.conf\"\ndirect = true\ntemplate = true\n"
+        );
+        let config = write_and_load_config(&fs, &toml);
+        let result = run(&config, None, false, &fs, &make_engine());
+        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("mutually exclusive"), "got: {msg}");
     }
 }

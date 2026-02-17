@@ -9,7 +9,7 @@
 
 use anyhow::{Context, Result};
 use std::path::Path;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::config::Config;
 use crate::platform::Fs;
@@ -32,6 +32,10 @@ pub fn run(config: &Config, files: Option<&[String]>, dry_run: bool, fs: &impl F
     let mut succeeded = 0usize;
 
     for entry in &entries {
+        if entry.direct {
+            debug!("Skipping direct file: {}", entry.src);
+            continue;
+        }
         match stage_file(entry, &generated_dir, &staged_dir, dry_run, fs) {
             Ok(()) => succeeded += 1,
             Err(e) => {
@@ -181,5 +185,19 @@ mod tests {
         let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         run(&config, None, true, &fs).unwrap();
         assert!(!fs.exists(Path::new(&format!("{DOTFILES}/.staged/a.conf"))));
+    }
+
+    #[test]
+    fn direct_files_skipped() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/.generated/direct.conf"), "content");
+        let toml = format!(
+            "dotfiles_dir = \"{DOTFILES}\"\nvars = [\"vars.toml\"]\n\n[[files]]\nsrc = \"direct.conf\"\ndirect = true\ntemplate = false\n"
+        );
+        let config = write_and_load_config(&fs, &toml);
+        run(&config, None, false, &fs).unwrap();
+        assert!(!fs.exists(Path::new(&format!(
+            "{DOTFILES}/.staged/direct.conf"
+        ))));
     }
 }

@@ -27,15 +27,13 @@ use super::is_janus_symlink;
 /// Returns `Ok(true)` if undeployed, `Ok(false)` if skipped (not a janus symlink).
 pub fn undeploy_single(
     src: &str,
-    staged_dir: &Path,
+    link_path: &Path,
     target_path: &Path,
     remove_file: bool,
     state: &mut State,
     fs: &impl Fs,
 ) -> Result<bool> {
-    let staged_path = staged_dir.join(src);
-
-    if !is_janus_symlink(target_path, &staged_path, fs) {
+    if !is_janus_symlink(target_path, link_path, fs) {
         warn!(
             "Target is not a janus symlink, skipping: {}",
             target_path.display()
@@ -47,7 +45,7 @@ pub fn undeploy_single(
         fs.remove_file(target_path)
             .with_context(|| format!("Failed to remove symlink: {}", target_path.display()))?;
     } else {
-        undeploy_with_copy(&staged_path, target_path, fs)?;
+        undeploy_with_copy(link_path, target_path, fs)?;
     }
 
     state.remove_deployed(src);
@@ -104,9 +102,15 @@ pub fn run(
             continue;
         }
 
+        let link_path = if entry.direct {
+            dotfiles_dir.join(&entry.src)
+        } else {
+            staged_dir.join(&entry.src)
+        };
+
         if !undeploy_single(
             &entry.src,
-            &staged_dir,
+            &link_path,
             &target_path,
             remove_file,
             &mut state,
@@ -298,5 +302,27 @@ mod tests {
         run(&config, None, false, true, &fs).unwrap();
         // Symlink should still exist
         assert!(fs.is_symlink(Path::new("/home/test/.config/a.conf")));
+    }
+
+    #[test]
+    fn undeploy_direct_file() {
+        let fs = setup_fs();
+        let source = format!("{DOTFILES}/direct.conf");
+        let target = "/home/test/.config/direct.conf";
+        fs.add_file(&source, "source content");
+        fs.add_symlink(target, &source);
+        let state_toml =
+            "[[deployed]]\nsrc = \"direct.conf\"\ntarget = \"~/.config/direct.conf\"\n";
+        fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
+        let toml = format!(
+            "dotfiles_dir = \"{DOTFILES}\"\nvars = [\"vars.toml\"]\n\n[[files]]\nsrc = \"direct.conf\"\ntarget = \"~/.config/direct.conf\"\ndirect = true\ntemplate = false\n"
+        );
+        let config = write_and_load_config(&fs, &toml);
+        run(&config, None, false, false, &fs).unwrap();
+        // Should be a regular file copy, not a symlink
+        assert!(!fs.is_symlink(Path::new(target)));
+        assert!(fs.is_file(Path::new(target)));
+        let state = State::load(Path::new(DOTFILES), &fs).unwrap();
+        assert!(!state.is_deployed("direct.conf"));
     }
 }
