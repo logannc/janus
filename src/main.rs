@@ -159,6 +159,9 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::Init { dotfiles_dir } => {
+            if cli.config.is_some() {
+                bail!("--config cannot be used with init (init creates the config)");
+            }
             ops::init::run(&dotfiles_dir, cli.dry_run, &fs, &engine)?;
         }
         command => {
