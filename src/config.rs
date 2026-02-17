@@ -27,6 +27,10 @@ pub struct Config {
     /// Managed file entries.
     #[serde(default)]
     pub files: Vec<FileEntry>,
+    /// Default targets when no files, `--all`, or `--filesets` are specified.
+    /// `"all"` behaves like `--all`. Otherwise, parsed as a comma-separated
+    /// list of fileset names.
+    pub default_targets: Option<String>,
     /// Named groups of file patterns for batch operations.
     #[serde(default)]
     pub filesets: HashMap<String, FilesetEntry>,

@@ -41,9 +41,6 @@ fn resolve_file_selection(
     if sources > 1 {
         bail!("Cannot combine explicit files, --all, and --filesets");
     }
-    if sources == 0 {
-        bail!("Specify files to process, --all, or --filesets");
-    }
 
     if all {
         return Ok(None);
@@ -51,7 +48,19 @@ fn resolve_file_selection(
     if !filesets.is_empty() {
         return Ok(Some(config.resolve_filesets(&filesets)?));
     }
-    Ok(Some(files))
+    if !files.is_empty() {
+        return Ok(Some(files));
+    }
+
+    // No explicit source — fall back to default_targets from config
+    match config.default_targets.as_deref() {
+        Some("all") => Ok(None),
+        Some(filesets) => {
+            let names: Vec<String> = filesets.split(',').map(|s| s.trim().to_string()).collect();
+            Ok(Some(config.resolve_filesets(&names)?))
+        }
+        None => bail!("Specify files to process, --all, or --filesets"),
+    }
 }
 
 fn main() -> Result<()> {
@@ -288,5 +297,62 @@ patterns = ["hypr/*"]
         let result = resolve_file_selection(vec!["a.conf".to_string()], true, vec![], &config);
         let msg = format!("{:#}", result.unwrap_err());
         assert!(msg.contains("Cannot combine"), "got: {msg}");
+    }
+
+    fn test_config_with_default_targets(default_targets: &str) -> Config {
+        let fs = setup_fs();
+        let toml = format!(
+            r#"
+dotfiles_dir = "{DOTFILES}"
+default_targets = "{default_targets}"
+
+[[files]]
+src = "a.conf"
+
+[[files]]
+src = "hypr/hypr.conf"
+
+[filesets.desktop]
+patterns = ["hypr/*"]
+"#
+        );
+        write_and_load_config(&fs, &toml)
+    }
+
+    #[test]
+    fn default_targets_all() {
+        let config = test_config_with_default_targets("all");
+        let result = resolve_file_selection(vec![], false, vec![], &config).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn default_targets_fileset() {
+        let config = test_config_with_default_targets("desktop");
+        let result = resolve_file_selection(vec![], false, vec![], &config).unwrap();
+        assert_eq!(result, Some(vec!["hypr/*".to_string()]));
+    }
+
+    #[test]
+    fn default_targets_overridden_by_explicit() {
+        let config = test_config_with_default_targets("all");
+        let result =
+            resolve_file_selection(vec!["a.conf".to_string()], false, vec![], &config).unwrap();
+        assert_eq!(result, Some(vec!["a.conf".to_string()]));
+    }
+
+    #[test]
+    fn default_targets_overridden_by_all() {
+        let config = test_config_with_default_targets("desktop");
+        let result = resolve_file_selection(vec![], true, vec![], &config).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn default_targets_overridden_by_filesets() {
+        let config = test_config_with_default_targets("all");
+        let result =
+            resolve_file_selection(vec![], false, vec!["desktop".to_string()], &config).unwrap();
+        assert_eq!(result, Some(vec!["hypr/*".to_string()]));
     }
 }
