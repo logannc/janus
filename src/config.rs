@@ -283,14 +283,16 @@ secrets = ["desktop-secrets.toml"]
         let fs = setup_fs();
         fs.add_file(CONFIG_PATH, "not valid toml {{{}}}");
         let result = Config::load(Path::new(CONFIG_PATH), &fs);
-        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("parse") || msg.contains("TOML") || msg.contains("deserialize"), "got: {msg}");
     }
 
     #[test]
     fn load_missing_file_errors() {
         let fs = setup_fs();
         let result = Config::load(Path::new("/nonexistent/config.toml"), &fs);
-        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("config") || msg.contains("nonexistent"), "got: {msg}");
     }
 
     #[test]
@@ -579,5 +581,32 @@ patterns = ["hypr/*"]
         let msg = format!("{:#}", result.unwrap_err());
         assert!(msg.contains("No matching files"), "got: {msg}");
         assert!(!msg.contains("Did you mean"), "got: {msg}");
+    }
+
+    #[test]
+    fn duplicate_src_both_returned() {
+        let fs = setup_fs();
+        let toml = format!(
+            r#"
+dotfiles_dir = "{DOTFILES}"
+
+[[files]]
+src = "a.conf"
+target = "~/.config/a.conf"
+
+[[files]]
+src = "a.conf"
+target = "~/.config/other/a.conf"
+"#
+        );
+        let config = write_and_load_config(&fs, &toml);
+        // filter_files(None) returns all entries, even duplicates
+        let entries = config.filter_files(None);
+        assert_eq!(entries.len(), 2);
+        // Both should have the same src
+        assert_eq!(entries[0].src, "a.conf");
+        assert_eq!(entries[1].src, "a.conf");
+        // But different targets
+        assert_ne!(entries[0].target(), entries[1].target());
     }
 }

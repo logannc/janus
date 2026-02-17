@@ -326,13 +326,17 @@ reason = "user_declined"
     #[test]
     fn save_with_recovery_success() {
         let fs = setup_fs();
-        let state = load_state(&fs);
+        let mut state = load_state(&fs);
+        state.add_deployed("test.conf".to_string(), "~/.config/test.conf".to_string());
         let recovery = RecoveryInfo {
             situation: vec!["test".to_string()],
             consequence: vec!["test".to_string()],
             instructions: vec!["test".to_string()],
         };
-        assert!(state.save_with_recovery(recovery, &fs).is_ok());
+        state.save_with_recovery(recovery, &fs).unwrap();
+        // Verify state was actually written to disk
+        let reloaded = State::load(Path::new(DOTFILES), &fs).unwrap();
+        assert!(reloaded.is_deployed("test.conf"));
     }
 
     #[test]
@@ -346,6 +350,7 @@ reason = "user_declined"
             instructions: vec!["fix manually".to_string()],
         };
         let result = state.save_with_recovery(recovery, &fs);
-        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("write") || msg.contains("state"), "got: {msg}");
     }
 }

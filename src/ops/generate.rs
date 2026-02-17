@@ -517,4 +517,22 @@ vars = ["fs-vars.toml"]
             .unwrap();
         assert_eq!(content, "blue");
     }
+
+    #[test]
+    fn undefined_variable_errors() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/vars.toml"), "");
+        fs.add_file(format!("{DOTFILES}/a.conf"), "Hello {{ undefined_name }}!");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        let result = run(&config, None, false, &fs, &make_engine());
+        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(
+            msg.contains("undefined_name") || msg.contains("not found") || msg.contains("Failed to render"),
+            "got: {msg}"
+        );
+    }
 }

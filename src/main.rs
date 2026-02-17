@@ -114,7 +114,8 @@ patterns = ["hypr/*"]
     fn no_source_errors() {
         let config = test_config();
         let result = resolve_file_selection(vec![], false, vec![], &config);
-        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("Specify"), "got: {msg}");
     }
 
     #[test]
@@ -126,7 +127,8 @@ patterns = ["hypr/*"]
             vec![],
             &config,
         );
-        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("Cannot combine"), "got: {msg}");
     }
 }
 

@@ -25,27 +25,37 @@ pub struct StatusFilters {
 }
 
 /// Computed status for a single managed file.
-struct FileStatus {
+#[derive(Debug)]
+pub struct FileStatus {
     /// Relative source path (e.g. `hypr/hypr.conf`).
-    src: String,
+    pub src: String,
     /// Whether the file is currently deployed.
-    deployed: bool,
+    pub deployed: bool,
     /// Human-readable detail string (e.g. "up to date", "source -> generated diff").
-    detail: String,
+    pub detail: String,
     /// Number of changed lines between generated and staged (0 if identical or missing).
-    changed_lines: usize,
+    pub changed_lines: usize,
 }
 
-/// Display pipeline status for the given files, applying optional filters.
+/// Result of computing pipeline status for all files.
+#[derive(Debug)]
+pub struct StatusResult {
+    /// Per-file statuses after filtering.
+    pub statuses: Vec<FileStatus>,
+    /// Fileset sync summary: `(name, files_changed, total_changed_lines)`.
+    pub fileset_summary: Vec<(String, usize, usize)>,
+}
+
+/// Compute pipeline status for the given files, applying optional filters.
 ///
-/// `--deployed` and `--undeployed` are mutually exclusive. `--only-diffs`
-/// can be combined with either.
-pub fn run(
+/// Returns the structured result without printing. Use `run()` for the
+/// CLI entry point that also displays output.
+pub fn compute(
     config: &Config,
     files: Option<&[String]>,
-    filters: StatusFilters,
+    filters: &StatusFilters,
     fs: &impl Fs,
-) -> Result<()> {
+) -> Result<StatusResult> {
     if filters.deployed && filters.undeployed {
         bail!("Cannot specify both --deployed and --undeployed");
     }
@@ -53,8 +63,10 @@ pub fn run(
     let entries = config.filter_files(files);
     if entries.is_empty() {
         config.bail_unmatched(files)?;
-        info!("No files to check");
-        return Ok(());
+        return Ok(StatusResult {
+            statuses: Vec::new(),
+            fileset_summary: Vec::new(),
+        });
     }
 
     let dotfiles_dir = config.dotfiles_dir(fs);
@@ -99,15 +111,39 @@ pub fn run(
         });
     }
 
-    if statuses.is_empty() {
+    let fileset_summary = if !config.filesets.is_empty() {
+        fileset_sync_summary(config, &statuses)
+    } else {
+        Vec::new()
+    };
+
+    Ok(StatusResult {
+        statuses,
+        fileset_summary,
+    })
+}
+
+/// Display pipeline status for the given files, applying optional filters.
+///
+/// `--deployed` and `--undeployed` are mutually exclusive. `--only-diffs`
+/// can be combined with either.
+pub fn run(
+    config: &Config,
+    files: Option<&[String]>,
+    filters: StatusFilters,
+    fs: &impl Fs,
+) -> Result<()> {
+    let result = compute(config, files, &filters, fs)?;
+
+    if result.statuses.is_empty() {
         info!("No files match the given filters");
         return Ok(());
     }
 
     // Find max src width for alignment
-    let max_src_len = statuses.iter().map(|s| s.src.len()).max().unwrap_or(0);
+    let max_src_len = result.statuses.iter().map(|s| s.src.len()).max().unwrap_or(0);
 
-    for status in &statuses {
+    for status in &result.statuses {
         let state_str = if status.deployed {
             "deployed  "
         } else {
@@ -123,26 +159,23 @@ pub fn run(
         );
     }
 
-    // Fileset sync summary
-    if !config.filesets.is_empty() {
-        let summary = fileset_sync_summary(config, &statuses);
-        if !summary.is_empty() {
-            println!();
-            println!("Filesets needing sync:");
-            let max_name_len = summary
-                .iter()
-                .map(|(name, _, _)| name.len())
-                .max()
-                .unwrap_or(0);
-            for (name, files_changed, total_lines) in &summary {
-                println!(
-                    "  {:<width$}  {} file(s) changed, {} line(s)",
-                    name,
-                    files_changed,
-                    total_lines,
-                    width = max_name_len,
-                );
-            }
+    if !result.fileset_summary.is_empty() {
+        println!();
+        println!("Filesets needing sync:");
+        let max_name_len = result
+            .fileset_summary
+            .iter()
+            .map(|(name, _, _)| name.len())
+            .max()
+            .unwrap_or(0);
+        for (name, files_changed, total_lines) in &result.fileset_summary {
+            println!(
+                "  {:<width$}  {} file(s) changed, {} line(s)",
+                name,
+                files_changed,
+                total_lines,
+                width = max_name_len,
+            );
         }
     }
 
@@ -294,7 +327,6 @@ mod tests {
     fn up_to_date() {
         let fs = setup_fs();
         setup_pipeline_file(&fs, "a.conf", "content");
-        // Deploy it
         let staged = format!("{DOTFILES}/.staged/a.conf");
         fs.add_symlink("/home/test/.config/a.conf", &staged);
         let state_toml =
@@ -304,20 +336,26 @@ mod tests {
             &fs,
             &make_config_toml(&[("a.conf", Some("~/.config/a.conf"))]),
         );
-        // Should succeed
-        run(&config, None, make_filters(false, false, false), &fs).unwrap();
+        let result = compute(&config, None, &make_filters(false, false, false), &fs).unwrap();
+        assert_eq!(result.statuses.len(), 1);
+        assert_eq!(result.statuses[0].src, "a.conf");
+        assert!(result.statuses[0].deployed);
+        assert_eq!(result.statuses[0].detail, "up to date");
+        assert_eq!(result.statuses[0].changed_lines, 0);
     }
 
     #[test]
     fn not_generated() {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/a.conf"), "content");
-        // No .generated file
         let config = write_and_load_config(
             &fs,
             &make_config_toml(&[("a.conf", None)]),
         );
-        run(&config, None, make_filters(false, false, false), &fs).unwrap();
+        let result = compute(&config, None, &make_filters(false, false, false), &fs).unwrap();
+        assert_eq!(result.statuses.len(), 1);
+        assert_eq!(result.statuses[0].detail, "not yet generated");
+        assert!(!result.statuses[0].deployed);
     }
 
     #[test]
@@ -325,12 +363,13 @@ mod tests {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/a.conf"), "content");
         fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "content");
-        // No .staged file
         let config = write_and_load_config(
             &fs,
             &make_config_toml(&[("a.conf", None)]),
         );
-        run(&config, None, make_filters(false, false, false), &fs).unwrap();
+        let result = compute(&config, None, &make_filters(false, false, false), &fs).unwrap();
+        assert_eq!(result.statuses.len(), 1);
+        assert_eq!(result.statuses[0].detail, "not yet staged");
     }
 
     #[test]
@@ -343,7 +382,48 @@ mod tests {
             &fs,
             &make_config_toml(&[("a.conf", None)]),
         );
-        run(&config, None, make_filters(false, false, false), &fs).unwrap();
+        let result = compute(&config, None, &make_filters(false, false, false), &fs).unwrap();
+        assert_eq!(result.statuses.len(), 1);
+        assert!(
+            result.statuses[0].detail.contains("source -> generated diff"),
+            "got: {}",
+            result.statuses[0].detail
+        );
+    }
+
+    #[test]
+    fn generated_staged_diff() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/a.conf"), "content");
+        fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "content");
+        fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "modified in staged");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", None)]),
+        );
+        let result = compute(&config, None, &make_filters(false, false, false), &fs).unwrap();
+        assert_eq!(result.statuses.len(), 1);
+        assert!(
+            result.statuses[0].detail.contains("generated -> staged diff"),
+            "got: {}",
+            result.statuses[0].detail
+        );
+        assert!(result.statuses[0].changed_lines > 0);
+    }
+
+    #[test]
+    fn ready_to_deploy() {
+        let fs = setup_fs();
+        setup_pipeline_file(&fs, "a.conf", "content");
+        // Not deployed — all in sync but no symlink
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("a.conf", Some("~/.config/a.conf"))]),
+        );
+        let result = compute(&config, None, &make_filters(false, false, false), &fs).unwrap();
+        assert_eq!(result.statuses.len(), 1);
+        assert_eq!(result.statuses[0].detail, "ready to deploy");
+        assert!(!result.statuses[0].deployed);
     }
 
     #[test]
@@ -363,8 +443,10 @@ mod tests {
                 ("undeployed.conf", Some("~/.config/undeployed.conf")),
             ]),
         );
-        // With --deployed filter, should succeed (only shows deployed files)
-        run(&config, None, make_filters(false, true, false), &fs).unwrap();
+        let result = compute(&config, None, &make_filters(false, true, false), &fs).unwrap();
+        assert_eq!(result.statuses.len(), 1);
+        assert_eq!(result.statuses[0].src, "deployed.conf");
+        assert!(result.statuses[0].deployed);
     }
 
     #[test]
@@ -384,8 +466,10 @@ mod tests {
                 ("undeployed.conf", Some("~/.config/undeployed.conf")),
             ]),
         );
-        // With --undeployed filter
-        run(&config, None, make_filters(false, false, true), &fs).unwrap();
+        let result = compute(&config, None, &make_filters(false, false, true), &fs).unwrap();
+        assert_eq!(result.statuses.len(), 1);
+        assert_eq!(result.statuses[0].src, "undeployed.conf");
+        assert!(!result.statuses[0].deployed);
     }
 
     #[test]
@@ -395,14 +479,16 @@ mod tests {
             &fs,
             &make_config_toml(&[("a.conf", None)]),
         );
-        let result = run(&config, None, make_filters(false, true, true), &fs);
+        let result = compute(&config, None, &make_filters(false, true, true), &fs);
         assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("--deployed"), "got: {msg}");
+        assert!(msg.contains("--undeployed"), "got: {msg}");
     }
 
     #[test]
     fn only_diffs_filter() {
         let fs = setup_fs();
-        // a.conf is up to date (all same content, deployed)
         setup_pipeline_file(&fs, "a.conf", "same");
         let staged_a = format!("{DOTFILES}/.staged/a.conf");
         fs.add_symlink("/home/test/.config/a.conf", &staged_a);
@@ -420,7 +506,53 @@ mod tests {
                 ("b.conf", Some("~/.config/b.conf")),
             ]),
         );
-        // Should succeed with only_diffs
-        run(&config, None, make_filters(true, false, false), &fs).unwrap();
+        let result = compute(&config, None, &make_filters(true, false, false), &fs).unwrap();
+        // Only b.conf should appear (it has a diff)
+        assert_eq!(result.statuses.len(), 1);
+        assert_eq!(result.statuses[0].src, "b.conf");
+        assert!(
+            result.statuses[0].detail.contains("diff"),
+            "got: {}",
+            result.statuses[0].detail
+        );
+    }
+
+    #[test]
+    fn source_missing() {
+        let fs = setup_fs();
+        // Source file doesn't exist, but config references it
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("missing.conf", None)]),
+        );
+        let result = compute(&config, None, &make_filters(false, false, false), &fs).unwrap();
+        assert_eq!(result.statuses.len(), 1);
+        assert_eq!(result.statuses[0].detail, "source missing");
+    }
+
+    #[test]
+    fn fileset_sync_summary_computed() {
+        let fs = setup_fs();
+        fs.add_file(format!("{DOTFILES}/hypr/hypr.conf"), "src");
+        fs.add_file(format!("{DOTFILES}/.generated/hypr/hypr.conf"), "src");
+        fs.add_file(format!("{DOTFILES}/.staged/hypr/hypr.conf"), "modified\nlines\n");
+        let toml = format!(
+            r#"
+dotfiles_dir = "{DOTFILES}"
+vars = ["vars.toml"]
+
+[[files]]
+src = "hypr/hypr.conf"
+
+[filesets.desktop]
+patterns = ["hypr/*"]
+"#
+        );
+        let config = write_and_load_config(&fs, &toml);
+        let result = compute(&config, None, &make_filters(false, false, false), &fs).unwrap();
+        assert_eq!(result.fileset_summary.len(), 1);
+        assert_eq!(result.fileset_summary[0].0, "desktop");
+        assert_eq!(result.fileset_summary[0].1, 1); // 1 file changed
+        assert!(result.fileset_summary[0].2 > 0); // some lines changed
     }
 }

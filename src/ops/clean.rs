@@ -363,6 +363,28 @@ mod tests {
     }
 
     #[test]
+    fn clean_orphans_nested_dirs() {
+        let fs = setup_fs();
+        fs.add_file(
+            format!("{DOTFILES}/.generated/deep/nested/orphan.conf"),
+            "orphan",
+        );
+        fs.add_file(
+            format!("{DOTFILES}/.staged/deep/nested/orphan.conf"),
+            "orphan",
+        );
+        // Not in config → orphan
+        let config = write_and_load_config(&fs, &make_config_toml(&[]));
+        run(&config, false, true, false, &fs).unwrap();
+        assert!(!fs.exists(Path::new(&format!(
+            "{DOTFILES}/.generated/deep/nested/orphan.conf"
+        ))));
+        assert!(!fs.exists(Path::new(&format!(
+            "{DOTFILES}/.staged/deep/nested/orphan.conf"
+        ))));
+    }
+
+    #[test]
     fn clean_orphans_removes_undeployed_staged() {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/.staged/orphan.conf"), "orphan");

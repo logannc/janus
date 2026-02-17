@@ -357,6 +357,9 @@ mod tests {
         // Should be deployed
         let state = State::load(Path::new(DOTFILES), &fs).unwrap();
         assert!(state.is_deployed("hypr/hypr.conf"));
+        // Config file should have the new entry appended
+        let config_content = fs.read_to_string(Path::new(CONFIG_PATH)).unwrap();
+        assert!(config_content.contains("src = \"hypr/hypr.conf\""), "config not updated: {config_content}");
     }
 
     #[test]
@@ -382,6 +385,8 @@ mod tests {
             &prompter,
         )
         .unwrap();
+        // File should NOT be copied again (no duplicate in dotfiles dir)
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/a.conf"))));
     }
 
     #[test]
@@ -406,6 +411,8 @@ mod tests {
             &prompter,
         )
         .unwrap();
+        // File should NOT be imported
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/ignored.conf"))));
     }
 
     #[test]
@@ -494,7 +501,8 @@ mod tests {
             &make_engine(),
             &prompter,
         );
-        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("not found") || msg.contains("does not exist") || msg.contains("nonexistent"), "got: {msg}");
     }
 
     #[test]

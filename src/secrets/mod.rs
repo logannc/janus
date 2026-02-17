@@ -190,7 +190,8 @@ mod tests {
         fs.add_file(format!("{DOTFILES}/bad.toml"), "not valid {{{");
         let result =
             parse_secret_files(Path::new(DOTFILES), &["bad.toml".to_string()], &fs);
-        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("parse") || msg.contains("TOML") || msg.contains("secret"), "got: {msg}");
     }
 
     #[test]

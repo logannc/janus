@@ -247,8 +247,17 @@ mod tests {
         let fs = setup_fs();
         let config = deploy_and_undeploy_setup(&fs);
         run(&config, None, false, false, &fs).unwrap();
+        // Verify state was persisted to disk (not just in-memory)
         let state = State::load(Path::new(DOTFILES), &fs).unwrap();
         assert!(!state.is_deployed("a.conf"));
+        // Verify the state file was written
+        let state_content = fs
+            .read_to_string(Path::new(&format!("{DOTFILES}/.janus_state.toml")))
+            .unwrap();
+        assert!(
+            !state_content.contains("a.conf"),
+            "state file should not contain undeployed entry: {state_content}"
+        );
     }
 
     #[test]
@@ -262,6 +271,8 @@ mod tests {
         );
         // Should succeed without error (just skips)
         run(&config, None, false, false, &fs).unwrap();
+        // File should be untouched (nothing to undeploy)
+        assert!(!fs.exists(Path::new("/home/test/.config/a.conf")));
     }
 
     #[test]

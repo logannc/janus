@@ -150,7 +150,8 @@ mod tests {
             &make_config_toml(&[("missing.conf", None)]),
         );
         let result = run(&config, None, false, &fs);
-        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("missing.conf"), "got: {msg}");
     }
 
     #[test]

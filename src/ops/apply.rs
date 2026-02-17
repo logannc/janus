@@ -80,6 +80,58 @@ mod tests {
     }
 
     #[test]
+    fn full_pipeline_with_template_and_secrets() {
+        let fs = setup_fs();
+        fs.add_file(
+            format!("{DOTFILES}/vars.toml"),
+            "app_name = \"myapp\"\nport = 8080",
+        );
+        fs.add_file(
+            format!("{DOTFILES}/secrets.toml"),
+            "[[secret]]\nname = \"db_pass\"\nengine = \"1password\"\nreference = \"op://vault/db/pw\"\n",
+        );
+        fs.add_file(
+            format!("{DOTFILES}/app.conf"),
+            "name={{ app_name }}\nport={{ port }}\npassword={{ db_pass }}\n",
+        );
+        let toml = format!(
+            r#"
+dotfiles_dir = "{DOTFILES}"
+vars = ["vars.toml"]
+secrets = ["secrets.toml"]
+
+[[files]]
+src = "app.conf"
+target = "~/.config/app.conf"
+"#
+        );
+        let config = write_and_load_config(&fs, &toml);
+        let mut engine = FakeSecretEngine::new();
+        engine.add_secret("1password", "op://vault/db/pw", "s3cret123");
+
+        run(&config, None, false, false, &fs, &engine).unwrap();
+
+        // Verify the symlink exists and points to staged
+        let target = Path::new("/home/test/.config/app.conf");
+        assert!(fs.is_symlink(target));
+        let link_dest = fs.read_link(target).unwrap();
+        assert_eq!(
+            link_dest,
+            std::path::PathBuf::from(format!("{DOTFILES}/.staged/app.conf"))
+        );
+
+        // Verify the rendered content has vars AND secrets resolved
+        let staged_content = fs
+            .read_to_string(Path::new(&format!("{DOTFILES}/.staged/app.conf")))
+            .unwrap();
+        assert_eq!(staged_content, "name=myapp\nport=8080\npassword=s3cret123\n");
+
+        // Verify state
+        let state = State::load(Path::new(DOTFILES), &fs).unwrap();
+        assert!(state.is_deployed("app.conf"));
+    }
+
+    #[test]
     fn dry_run() {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/vars.toml"), "");

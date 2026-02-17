@@ -284,7 +284,8 @@ mod tests {
             &make_config_toml(&[("missing.conf", Some("~/.config/missing.conf"))]),
         );
         let result = run(&config, None, false, false, &fs);
-        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("Staged file not found") || msg.contains("missing.conf"), "got: {msg}");
     }
 
     #[test]
@@ -330,6 +331,24 @@ mod tests {
         assert!(!fs.exists(Path::new("/home/test/.config/a.conf")));
         let state = State::load(Path::new(DOTFILES), &fs).unwrap();
         assert!(!state.is_deployed("a.conf"));
+    }
+
+    #[test]
+    fn backup_nested_path() {
+        let fs = setup_fs();
+        // Put a regular file at a nested target
+        fs.add_file("/home/test/.config/deep/nested.conf", "existing");
+        fs.add_file(format!("{DOTFILES}/.staged/deep/nested.conf"), "staged");
+        let config = write_and_load_config(
+            &fs,
+            &make_config_toml(&[("deep/nested.conf", Some("~/.config/deep/nested.conf"))]),
+        );
+        run(&config, None, false, false, &fs).unwrap();
+        // Backup should exist at nested path
+        assert!(fs.exists(Path::new(
+            "/home/test/.config/deep/nested.conf.janus.bak"
+        )));
+        assert!(fs.is_symlink(Path::new("/home/test/.config/deep/nested.conf")));
     }
 
     #[test]

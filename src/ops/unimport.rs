@@ -234,7 +234,8 @@ mod tests {
         let fs = setup_fs();
         let config = write_and_load_config(&fs, &make_config_toml(&[]));
         let result = run(&config, Path::new(CONFIG_PATH), &[], false, false, &fs);
-        assert!(result.is_err());
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("No files") || msg.contains("Specify"), "got: {msg}");
     }
 
     #[test]
