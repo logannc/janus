@@ -68,6 +68,9 @@ pub struct FileEntry {
     /// Whether to symlink directly from dotfiles source (skip generate/stage).
     #[serde(default)]
     pub direct: bool,
+    /// Whether to exclude this file when `--all` or `default_targets = "all"` is used.
+    #[serde(default)]
+    pub exclude_from_all: bool,
 }
 
 impl FileEntry {
@@ -161,7 +164,7 @@ impl Config {
     /// exact match if the pattern is not a valid glob).
     pub fn filter_files(&self, patterns: Option<&[String]>) -> Vec<&FileEntry> {
         let Some(patterns) = patterns else {
-            return self.files.iter().collect();
+            return self.files.iter().filter(|e| !e.exclude_from_all).collect();
         };
         self.files
             .iter()
@@ -317,6 +320,7 @@ secrets = ["desktop-secrets.toml"]
             vars: vec![],
             secrets: vec![],
             direct: false,
+            exclude_from_all: false,
         };
         assert_eq!(entry.target(), "~/.config/hypr/hypr.conf");
     }
@@ -330,6 +334,7 @@ secrets = ["desktop-secrets.toml"]
             vars: vec![],
             secrets: vec![],
             direct: false,
+            exclude_from_all: false,
         };
         assert_eq!(entry.target(), "~/.bashrc");
     }
@@ -359,6 +364,67 @@ secrets = ["desktop-secrets.toml"]
         let config = write_and_load_config(&fs, &toml);
         assert!(config.files[0].direct);
         assert!(!config.files[0].template);
+    }
+
+    #[test]
+    fn exclude_from_all_defaults_false() {
+        let fs = setup_fs();
+        let toml = format!("dotfiles_dir = \"{DOTFILES}\"\n\n[[files]]\nsrc = \"foo.conf\"\n");
+        let config = write_and_load_config(&fs, &toml);
+        assert!(!config.files[0].exclude_from_all);
+    }
+
+    #[test]
+    fn exclude_from_all_parses() {
+        let fs = setup_fs();
+        let toml = format!(
+            "dotfiles_dir = \"{DOTFILES}\"\n\n[[files]]\nsrc = \"foo.conf\"\nexclude_from_all = true\n"
+        );
+        let config = write_and_load_config(&fs, &toml);
+        assert!(config.files[0].exclude_from_all);
+    }
+
+    #[test]
+    fn filter_files_none_excludes_exclude_from_all() {
+        let fs = setup_fs();
+        let toml = format!(
+            r#"
+dotfiles_dir = "{DOTFILES}"
+
+[[files]]
+src = "a.conf"
+
+[[files]]
+src = "excluded.conf"
+exclude_from_all = true
+"#
+        );
+        let config = write_and_load_config(&fs, &toml);
+        let filtered = config.filter_files(None);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].src, "a.conf");
+    }
+
+    #[test]
+    fn filter_files_explicit_includes_exclude_from_all() {
+        let fs = setup_fs();
+        let toml = format!(
+            r#"
+dotfiles_dir = "{DOTFILES}"
+
+[[files]]
+src = "a.conf"
+
+[[files]]
+src = "excluded.conf"
+exclude_from_all = true
+"#
+        );
+        let config = write_and_load_config(&fs, &toml);
+        let patterns = vec!["excluded.conf".to_string()];
+        let filtered = config.filter_files(Some(&patterns));
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].src, "excluded.conf");
     }
 
     #[test]
