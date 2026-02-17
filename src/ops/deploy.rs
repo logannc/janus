@@ -205,16 +205,7 @@ fn backup_path_for(target_path: &Path) -> std::path::PathBuf {
     ))
 }
 
-/// Check if `target` is a symlink pointing to `expected_staged`.
-fn is_janus_symlink(target: &Path, expected_staged: &Path, fs: &impl Fs) -> bool {
-    if !fs.is_symlink(target) {
-        return false;
-    }
-    match fs.read_link(target) {
-        Ok(link_dest) => link_dest == expected_staged,
-        Err(_) => false,
-    }
-}
+use super::is_janus_symlink;
 
 #[cfg(test)]
 mod tests {
