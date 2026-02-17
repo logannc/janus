@@ -87,6 +87,22 @@ After running `janus init`, your dotfiles directory looks like this (using hypr 
 
 **Apply** runs all three in sequence: generate, stage, deploy.
 
+### Direct Files
+
+Some files don't need the pipeline at all -- they should just be symlinked straight from your dotfiles directory. The janus config itself is a good example: it doesn't need templating, and running `apply --all` would overwrite any changes you made to it.
+
+Set `direct = true` on a file entry to skip generate and stage. Deploy will create a symlink directly from the source file in your dotfiles directory to the target path. Direct files are also skipped by diff and sync (there's nothing to diff).
+
+```toml
+[[files]]
+src = "janus/config.toml"
+target = "~/.config/janus/config.toml"
+direct = true
+template = false
+```
+
+Note: `direct = true` and `template = true` is an error -- direct files can't be templated since they bypass the pipeline.
+
 ### Two-Way Sync
 
 When a deployed application modifies its config, the change writes through the symlink directly into `.staged/`. Run `janus status --all` to see which files have drifted, then `janus sync` to interactively merge those changes back into your source templates hunk by hunk.
@@ -118,6 +134,10 @@ vars = ["vars.toml", "machine-vars.toml"]
 # Secrets are resolved at generate-time from external engines.
 secrets = ["secrets.toml"]
 
+# Fallback when no files, --all, or --filesets are given.
+# "all" behaves like --all. Otherwise, comma-separated fileset names.
+default_targets = "all"
+
 # --- File entries ---
 
 [[files]]
@@ -131,6 +151,13 @@ secrets = ["hypr-secrets.toml"]                # per-file secret overrides
 src = "bashrc"
 target = "~/.bashrc"
 template = false                               # deploy as plain copy, no rendering
+
+[[files]]
+src = "janus/config.toml"
+target = "~/.config/janus/config.toml"
+direct = true                                  # symlink directly from source (skip pipeline)
+template = false
+exclude_from_all = true                        # only process when explicitly targeted
 
 # --- Filesets ---
 
@@ -150,6 +177,8 @@ patterns = ["bashrc", "zshrc", "starship.toml"]
 | `src` | string | *required* | Relative path within `dotfiles_dir` |
 | `target` | string | `~/.config/{src}` | Deployment target path (supports `~`) |
 | `template` | bool | `true` | Whether to render as a Tera template |
+| `direct` | bool | `false` | Symlink directly from source, bypassing generate/stage |
+| `exclude_from_all` | bool | `false` | Exclude from `--all` and `default_targets = "all"` |
 | `vars` | list of strings | `[]` | Per-file variable files (override globals) |
 | `secrets` | list of strings | `[]` | Per-file secret files (override globals) |
 
@@ -162,6 +191,29 @@ patterns = ["bashrc", "zshrc", "starship.toml"]
 | `secrets` | list of strings | `[]` | Secret files applied to matching files |
 
 Filesets let you operate on groups of files: `janus apply --filesets desktop,shell`. They also support fileset-level variable and secret overrides that are automatically inherited by matching files during generation.
+
+### Default Targets
+
+Tired of typing `--all` every time? Set `default_targets` in your config:
+
+```toml
+default_targets = "all"           # behaves like --all when nothing else is specified
+default_targets = "desktop,shell" # behaves like --filesets desktop,shell
+```
+
+When no files, `--all`, or `--filesets` are given on the command line, janus falls back to `default_targets`. Explicit CLI arguments always take precedence.
+
+### Excluding Files from `--all`
+
+Files with `exclude_from_all = true` are skipped when using `--all` or `default_targets = "all"`. They can still be targeted explicitly by name or via filesets. This is useful for files you want to manage but only process on demand (e.g., the janus config itself).
+
+```toml
+[[files]]
+src = "janus/config.toml"
+direct = true
+template = false
+exclude_from_all = true
+```
 
 ## Template Variables
 
@@ -278,6 +330,7 @@ Secrets follow the same merge order as variables:
 |---------|-------------|
 | `janus init [--dotfiles-dir PATH]` | Create dotfiles directory, config, and state file |
 | `janus clean [--generated] [--orphans]` | Delete generated files or remove orphaned files from generated/staging |
+| `janus completions <shell>` | Generate shell completions (bash, zsh, fish, elvish, powershell) |
 
 ### Global Flags
 
@@ -318,9 +371,26 @@ Janus is designed to be safe by default:
 - **`undeploy` leaves files behind.** When you undeploy, the symlink is replaced with a regular copy of the file so your config doesn't disappear. Use `--remove-file` to actually delete it.
 - **`unimport` has no `--all`.** Unimporting removes source files and config entries. Requiring explicit file selection prevents accidents.
 - **Atomic deploys.** By default, symlinks are created atomically (temp symlink + rename) so there's never a moment where the target file doesn't exist.
-- **Explicit file selection.** Every command that operates on files requires either explicit file arguments, `--all`, or `--filesets`. Nothing defaults to "all".
+- **Explicit file selection.** Every command that operates on files requires either explicit file arguments, `--all`, or `--filesets`. Nothing defaults to "all" unless you opt in with `default_targets`.
 - **Dry run everything.** Every mutating command supports `--dry-run`.
 - **State saved per file.** Deploy and import save state after each file, not in a batch. If something fails halfway, the state file accurately reflects what actually happened.
+
+## Shell Completions
+
+Generate completions for your shell and source them:
+
+```sh
+# Bash
+janus completions bash > ~/.local/share/bash-completion/completions/janus
+# or in .bashrc
+eval "$(janus completions bash)"
+
+# Zsh
+janus completions zsh > ~/.zfunc/_janus
+
+# Fish
+janus completions fish > ~/.config/fish/completions/janus.fish
+```
 
 ## Building
 
