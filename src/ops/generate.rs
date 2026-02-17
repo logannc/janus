@@ -243,10 +243,7 @@ mod tests {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/vars.toml"), "name = \"world\"");
         fs.add_file(format!("{DOTFILES}/greet.conf"), "Hello {{ name }}!");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("greet.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("greet.conf", None)]));
         run(&config, None, false, &fs, &make_engine()).unwrap();
         let content = fs
             .read_to_string(Path::new(&format!("{DOTFILES}/.generated/greet.conf")))
@@ -276,10 +273,7 @@ mod tests {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/vars.toml"), "");
         fs.add_file_with_mode(format!("{DOTFILES}/script.sh"), "#!/bin/bash", 0o755);
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("script.sh", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("script.sh", None)]));
         run(&config, None, false, &fs, &make_engine()).unwrap();
         let mode = fs
             .file_mode(Path::new(&format!("{DOTFILES}/.generated/script.sh")))
@@ -292,10 +286,7 @@ mod tests {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/vars.toml"), "");
         fs.add_file(format!("{DOTFILES}/hypr/hypr.conf"), "content");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("hypr/hypr.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("hypr/hypr.conf", None)]));
         run(&config, None, false, &fs, &make_engine()).unwrap();
         assert!(fs.is_dir(Path::new(&format!("{DOTFILES}/.generated/hypr"))));
     }
@@ -313,9 +304,7 @@ mod tests {
         let result = run(&config, None, false, &fs, &make_engine());
         assert!(result.is_err());
         // good.conf should still have been generated
-        assert!(fs.exists(Path::new(&format!(
-            "{DOTFILES}/.generated/good.conf"
-        ))));
+        assert!(fs.exists(Path::new(&format!("{DOTFILES}/.generated/good.conf"))));
     }
 
     #[test]
@@ -323,10 +312,7 @@ mod tests {
         let fs = setup_fs();
         // vars.toml doesn't exist but that's OK
         fs.add_file(format!("{DOTFILES}/a.conf"), "plain content");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         run(&config, None, false, &fs, &make_engine()).unwrap();
     }
 
@@ -450,9 +436,7 @@ src = "test.conf"
         let patterns = vec!["a.conf".to_string()];
         run(&config, Some(&patterns), false, &fs, &make_engine()).unwrap();
         assert!(fs.exists(Path::new(&format!("{DOTFILES}/.generated/a.conf"))));
-        assert!(!fs.exists(Path::new(&format!(
-            "{DOTFILES}/.generated/b.conf"
-        ))));
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/.generated/b.conf"))));
     }
 
     #[test]
@@ -480,14 +464,9 @@ src = "test.conf"
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/vars.toml"), "");
         fs.add_file(format!("{DOTFILES}/a.conf"), "content");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         run(&config, None, true, &fs, &make_engine()).unwrap();
-        assert!(!fs.exists(Path::new(&format!(
-            "{DOTFILES}/.generated/a.conf"
-        ))));
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/.generated/a.conf"))));
     }
 
     #[test]
@@ -523,15 +502,14 @@ vars = ["fs-vars.toml"]
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/vars.toml"), "");
         fs.add_file(format!("{DOTFILES}/a.conf"), "Hello {{ undefined_name }}!");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         let result = run(&config, None, false, &fs, &make_engine());
         assert!(result.is_err());
         let msg = format!("{:#}", result.unwrap_err());
         assert!(
-            msg.contains("undefined_name") || msg.contains("not found") || msg.contains("Failed to render"),
+            msg.contains("undefined_name")
+                || msg.contains("not found")
+                || msg.contains("Failed to render"),
             "got: {msg}"
         );
     }

@@ -141,7 +141,12 @@ pub fn run(
     }
 
     // Find max src width for alignment
-    let max_src_len = result.statuses.iter().map(|s| s.src.len()).max().unwrap_or(0);
+    let max_src_len = result
+        .statuses
+        .iter()
+        .map(|s| s.src.len())
+        .max()
+        .unwrap_or(0);
 
     for status in &result.statuses {
         let state_str = if status.deployed {
@@ -329,8 +334,7 @@ mod tests {
         setup_pipeline_file(&fs, "a.conf", "content");
         let staged = format!("{DOTFILES}/.staged/a.conf");
         fs.add_symlink("/home/test/.config/a.conf", &staged);
-        let state_toml =
-            "[[deployed]]\nsrc = \"a.conf\"\ntarget = \"~/.config/a.conf\"\n";
+        let state_toml = "[[deployed]]\nsrc = \"a.conf\"\ntarget = \"~/.config/a.conf\"\n";
         fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
         let config = write_and_load_config(
             &fs,
@@ -348,10 +352,7 @@ mod tests {
     fn not_generated() {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/a.conf"), "content");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         let result = compute(&config, None, &make_filters(false, false, false), &fs).unwrap();
         assert_eq!(result.statuses.len(), 1);
         assert_eq!(result.statuses[0].detail, "not yet generated");
@@ -363,10 +364,7 @@ mod tests {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/a.conf"), "content");
         fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "content");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         let result = compute(&config, None, &make_filters(false, false, false), &fs).unwrap();
         assert_eq!(result.statuses.len(), 1);
         assert_eq!(result.statuses[0].detail, "not yet staged");
@@ -378,14 +376,13 @@ mod tests {
         fs.add_file(format!("{DOTFILES}/a.conf"), "source {{ var }}");
         fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "source rendered");
         fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "source rendered");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         let result = compute(&config, None, &make_filters(false, false, false), &fs).unwrap();
         assert_eq!(result.statuses.len(), 1);
         assert!(
-            result.statuses[0].detail.contains("source -> generated diff"),
+            result.statuses[0]
+                .detail
+                .contains("source -> generated diff"),
             "got: {}",
             result.statuses[0].detail
         );
@@ -397,14 +394,13 @@ mod tests {
         fs.add_file(format!("{DOTFILES}/a.conf"), "content");
         fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "content");
         fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "modified in staged");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         let result = compute(&config, None, &make_filters(false, false, false), &fs).unwrap();
         assert_eq!(result.statuses.len(), 1);
         assert!(
-            result.statuses[0].detail.contains("generated -> staged diff"),
+            result.statuses[0]
+                .detail
+                .contains("generated -> staged diff"),
             "got: {}",
             result.statuses[0].detail
         );
@@ -475,10 +471,7 @@ mod tests {
     #[test]
     fn both_filters_error() {
         let fs = setup_fs();
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         let result = compute(&config, None, &make_filters(false, true, true), &fs);
         assert!(result.is_err());
         let msg = format!("{:#}", result.unwrap_err());
@@ -496,8 +489,7 @@ mod tests {
         fs.add_file(format!("{DOTFILES}/b.conf"), "src");
         fs.add_file(format!("{DOTFILES}/.generated/b.conf"), "src");
         fs.add_file(format!("{DOTFILES}/.staged/b.conf"), "different");
-        let state_toml =
-            "[[deployed]]\nsrc = \"a.conf\"\ntarget = \"~/.config/a.conf\"\n";
+        let state_toml = "[[deployed]]\nsrc = \"a.conf\"\ntarget = \"~/.config/a.conf\"\n";
         fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
         let config = write_and_load_config(
             &fs,
@@ -521,10 +513,7 @@ mod tests {
     fn source_missing() {
         let fs = setup_fs();
         // Source file doesn't exist, but config references it
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("missing.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("missing.conf", None)]));
         let result = compute(&config, None, &make_filters(false, false, false), &fs).unwrap();
         assert_eq!(result.statuses.len(), 1);
         assert_eq!(result.statuses[0].detail, "source missing");
@@ -535,7 +524,10 @@ mod tests {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/hypr/hypr.conf"), "src");
         fs.add_file(format!("{DOTFILES}/.generated/hypr/hypr.conf"), "src");
-        fs.add_file(format!("{DOTFILES}/.staged/hypr/hypr.conf"), "modified\nlines\n");
+        fs.add_file(
+            format!("{DOTFILES}/.staged/hypr/hypr.conf"),
+            "modified\nlines\n",
+        );
         let toml = format!(
             r#"
 dotfiles_dir = "{DOTFILES}"

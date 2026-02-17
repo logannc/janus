@@ -17,7 +17,12 @@ use crate::platform::{Fs, SecretEngine};
 /// Creates the directory structure, writes the config source inside the
 /// dotfiles directory (with a self-referencing `[[files]]` entry), then
 /// runs the full pipeline (`apply`) to deploy it as a symlink.
-pub fn run(dotfiles_dir: &str, dry_run: bool, fs: &impl Fs, engine: &impl SecretEngine) -> Result<()> {
+pub fn run(
+    dotfiles_dir: &str,
+    dry_run: bool,
+    fs: &impl Fs,
+    engine: &impl SecretEngine,
+) -> Result<()> {
     let dotfiles_path = expand_tilde(dotfiles_dir, fs);
 
     info!(
@@ -89,12 +94,7 @@ pub fn run(dotfiles_dir: &str, dry_run: bool, fs: &impl Fs, engine: &impl Secret
             "dotfiles_dir = \"{dotfiles_dir}\"\nvars = [\"vars.toml\"]\n\n[[files]]\nsrc = \"janus/config.toml\"\ntemplate = false\n"
         );
         fs.write(&config_src, default_config.as_bytes())
-            .with_context(|| {
-                format!(
-                    "Failed to create config source: {}",
-                    config_src.display()
-                )
-            })?;
+            .with_context(|| format!("Failed to create config source: {}", config_src.display()))?;
         info!("Created config source at {}", config_src.display());
     }
 
@@ -138,9 +138,7 @@ mod tests {
         assert!(fs.exists(Path::new(
             "/home/test/dotfiles/.generated/janus/config.toml"
         )));
-        assert!(fs.exists(Path::new(
-            "/home/test/dotfiles/.staged/janus/config.toml"
-        )));
+        assert!(fs.exists(Path::new("/home/test/dotfiles/.staged/janus/config.toml")));
         // Deployed symlink exists at target
         assert!(fs.exists(Path::new("/home/test/.config/janus/config.toml")));
     }

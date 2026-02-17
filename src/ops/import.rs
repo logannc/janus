@@ -260,12 +260,7 @@ fn determine_dest_path(file_path: &Path, fs: &impl Fs) -> Result<String> {
 }
 
 /// Append a `[[files]]` entry to the config file using `toml_edit` to preserve formatting.
-fn append_config_entry(
-    config_path: &Path,
-    src: &str,
-    target: &str,
-    fs: &impl Fs,
-) -> Result<()> {
+fn append_config_entry(config_path: &Path, src: &str, target: &str, fs: &impl Fs) -> Result<()> {
     let contents = fs
         .read_to_string(config_path)
         .with_context(|| format!("Failed to read config: {}", config_path.display()))?;
@@ -353,15 +348,16 @@ mod tests {
         )
         .unwrap();
         // File should be copied to dotfiles dir
-        assert!(fs.exists(Path::new(&format!(
-            "{DOTFILES}/hypr/hypr.conf"
-        ))));
+        assert!(fs.exists(Path::new(&format!("{DOTFILES}/hypr/hypr.conf"))));
         // Should be deployed
         let state = State::load(Path::new(DOTFILES), &fs).unwrap();
         assert!(state.is_deployed("hypr/hypr.conf"));
         // Config file should have the new entry appended
         let config_content = fs.read_to_string(Path::new(CONFIG_PATH)).unwrap();
-        assert!(config_content.contains("src = \"hypr/hypr.conf\""), "config not updated: {config_content}");
+        assert!(
+            config_content.contains("src = \"hypr/hypr.conf\""),
+            "config not updated: {config_content}"
+        );
     }
 
     #[test]
@@ -504,7 +500,12 @@ mod tests {
             &prompter,
         );
         let msg = format!("{:#}", result.unwrap_err());
-        assert!(msg.contains("not found") || msg.contains("does not exist") || msg.contains("nonexistent"), "got: {msg}");
+        assert!(
+            msg.contains("not found")
+                || msg.contains("does not exist")
+                || msg.contains("nonexistent"),
+            "got: {msg}"
+        );
     }
 
     #[test]
@@ -560,8 +561,13 @@ mod tests {
         let fs = setup_fs();
         let toml = make_config_toml(&[]);
         fs.add_file(CONFIG_PATH, toml.as_str());
-        append_config_entry(Path::new(CONFIG_PATH), "hypr/hypr.conf", "~/.config/hypr/hypr.conf", &fs)
-            .unwrap();
+        append_config_entry(
+            Path::new(CONFIG_PATH),
+            "hypr/hypr.conf",
+            "~/.config/hypr/hypr.conf",
+            &fs,
+        )
+        .unwrap();
         let content = fs.read_to_string(Path::new(CONFIG_PATH)).unwrap();
         // target should be omitted since it matches the default
         assert!(content.contains("src = \"hypr/hypr.conf\""));

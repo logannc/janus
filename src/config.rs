@@ -284,7 +284,10 @@ secrets = ["desktop-secrets.toml"]
         fs.add_file(CONFIG_PATH, "not valid toml {{{}}}");
         let result = Config::load(Path::new(CONFIG_PATH), &fs);
         let msg = format!("{:#}", result.unwrap_err());
-        assert!(msg.contains("parse") || msg.contains("TOML") || msg.contains("deserialize"), "got: {msg}");
+        assert!(
+            msg.contains("parse") || msg.contains("TOML") || msg.contains("deserialize"),
+            "got: {msg}"
+        );
     }
 
     #[test]
@@ -292,7 +295,10 @@ secrets = ["desktop-secrets.toml"]
         let fs = setup_fs();
         let result = Config::load(Path::new("/nonexistent/config.toml"), &fs);
         let msg = format!("{:#}", result.unwrap_err());
-        assert!(msg.contains("config") || msg.contains("nonexistent"), "got: {msg}");
+        assert!(
+            msg.contains("config") || msg.contains("nonexistent"),
+            "got: {msg}"
+        );
     }
 
     #[test]
@@ -322,9 +328,7 @@ secrets = ["desktop-secrets.toml"]
     #[test]
     fn file_entry_template_defaults_true() {
         let fs = setup_fs();
-        let toml = format!(
-            "dotfiles_dir = \"{DOTFILES}\"\n\n[[files]]\nsrc = \"foo.conf\"\n"
-        );
+        let toml = format!("dotfiles_dir = \"{DOTFILES}\"\n\n[[files]]\nsrc = \"foo.conf\"\n");
         let config = write_and_load_config(&fs, &toml);
         assert!(config.files[0].template);
     }
@@ -341,7 +345,10 @@ secrets = ["desktop-secrets.toml"]
         let fs = setup_fs();
         let toml = "dotfiles_dir = \"~/dotfiles\"\n";
         let config = write_and_load_config(&fs, toml);
-        assert_eq!(config.dotfiles_dir(&fs), PathBuf::from("/home/test/dotfiles"));
+        assert_eq!(
+            config.dotfiles_dir(&fs),
+            PathBuf::from("/home/test/dotfiles")
+        );
     }
 
     #[test]
@@ -491,9 +498,7 @@ patterns = ["hypr/*", "waybar/*"]
 "#
         );
         let config = write_and_load_config(&fs, &toml);
-        let patterns = config
-            .resolve_filesets(&["desktop".to_string()])
-            .unwrap();
+        let patterns = config.resolve_filesets(&["desktop".to_string()]).unwrap();
         assert_eq!(patterns, vec!["hypr/*", "waybar/*"]);
     }
 
@@ -527,10 +532,7 @@ patterns = ["hypr/*"]
     #[test]
     fn suggest_files_close_match() {
         let fs = setup_fs();
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("hypr/hypr.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("hypr/hypr.conf", None)]));
         let suggestions = config.suggest_files(&["hypr/hypr.conff".to_string()]);
         assert!(!suggestions.is_empty());
         assert_eq!(suggestions[0], "hypr/hypr.conf");
@@ -539,10 +541,7 @@ patterns = ["hypr/*"]
     #[test]
     fn suggest_files_no_match() {
         let fs = setup_fs();
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("hypr/hypr.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("hypr/hypr.conf", None)]));
         let suggestions = config.suggest_files(&["zzzzzzz".to_string()]);
         assert!(suggestions.is_empty());
     }
@@ -557,10 +556,7 @@ patterns = ["hypr/*"]
     #[test]
     fn bail_unmatched_with_suggestion() {
         let fs = setup_fs();
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("hypr/hypr.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("hypr/hypr.conf", None)]));
         let patterns = vec!["hypr/hypr.conff".to_string()];
         let result = config.bail_unmatched(Some(&patterns));
         assert!(result.is_err());
@@ -571,10 +567,7 @@ patterns = ["hypr/*"]
     #[test]
     fn bail_unmatched_no_suggestion() {
         let fs = setup_fs();
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("hypr/hypr.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("hypr/hypr.conf", None)]));
         let patterns = vec!["zzzzzzz".to_string()];
         let result = config.bail_unmatched(Some(&patterns));
         assert!(result.is_err());

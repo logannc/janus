@@ -111,10 +111,7 @@ mod tests {
     fn copies_to_staged() {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "generated content");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         run(&config, None, false, &fs).unwrap();
         let content = fs
             .read_to_string(Path::new(&format!("{DOTFILES}/.staged/a.conf")))
@@ -130,10 +127,7 @@ mod tests {
             "#!/bin/bash",
             0o755,
         );
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("script.sh", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("script.sh", None)]));
         run(&config, None, false, &fs).unwrap();
         let mode = fs
             .file_mode(Path::new(&format!("{DOTFILES}/.staged/script.sh")))
@@ -145,10 +139,7 @@ mod tests {
     fn missing_generated_errors() {
         let fs = setup_fs();
         // No generated file exists
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("missing.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("missing.conf", None)]));
         let result = run(&config, None, false, &fs);
         let msg = format!("{:#}", result.unwrap_err());
         assert!(msg.contains("missing.conf"), "got: {msg}");
@@ -187,10 +178,7 @@ mod tests {
     fn dry_run() {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "content");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         run(&config, None, true, &fs).unwrap();
         assert!(!fs.exists(Path::new(&format!("{DOTFILES}/.staged/a.conf"))));
     }

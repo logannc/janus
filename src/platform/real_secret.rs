@@ -1,6 +1,6 @@
 //! Real secret engine implementation dispatching to external CLIs.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::process::Command;
 
 use super::SecretEngine;

@@ -11,6 +11,7 @@ mod paths;
 mod platform;
 mod secrets;
 mod state;
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod test_helpers;
 
@@ -51,85 +52,6 @@ fn resolve_file_selection(
         return Ok(Some(config.resolve_filesets(&filesets)?));
     }
     Ok(Some(files))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_helpers::*;
-
-    fn test_config() -> Config {
-        let fs = setup_fs();
-        let toml = format!(
-            r#"
-dotfiles_dir = "{DOTFILES}"
-
-[[files]]
-src = "a.conf"
-
-[[files]]
-src = "hypr/hypr.conf"
-
-[filesets.desktop]
-patterns = ["hypr/*"]
-"#
-        );
-        write_and_load_config(&fs, &toml)
-    }
-
-    #[test]
-    fn all_returns_none() {
-        let config = test_config();
-        let result = resolve_file_selection(vec![], true, vec![], &config).unwrap();
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn explicit_files() {
-        let config = test_config();
-        let result = resolve_file_selection(
-            vec!["a.conf".to_string()],
-            false,
-            vec![],
-            &config,
-        )
-        .unwrap();
-        assert_eq!(result, Some(vec!["a.conf".to_string()]));
-    }
-
-    #[test]
-    fn filesets_resolved() {
-        let config = test_config();
-        let result = resolve_file_selection(
-            vec![],
-            false,
-            vec!["desktop".to_string()],
-            &config,
-        )
-        .unwrap();
-        assert_eq!(result, Some(vec!["hypr/*".to_string()]));
-    }
-
-    #[test]
-    fn no_source_errors() {
-        let config = test_config();
-        let result = resolve_file_selection(vec![], false, vec![], &config);
-        let msg = format!("{:#}", result.unwrap_err());
-        assert!(msg.contains("Specify"), "got: {msg}");
-    }
-
-    #[test]
-    fn multiple_sources_errors() {
-        let config = test_config();
-        let result = resolve_file_selection(
-            vec!["a.conf".to_string()],
-            true,
-            vec![],
-            &config,
-        );
-        let msg = format!("{:#}", result.unwrap_err());
-        assert!(msg.contains("Cannot combine"), "got: {msg}");
-    }
 }
 
 fn main() -> Result<()> {
@@ -229,14 +151,7 @@ fn main() -> Result<()> {
                     filesets,
                 } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
-                    ops::apply::run(
-                        &config,
-                        files.as_deref(),
-                        force,
-                        cli.dry_run,
-                        &fs,
-                        &engine,
-                    )?;
+                    ops::apply::run(&config, files.as_deref(), force, cli.dry_run, &fs, &engine)?;
                 }
                 Command::Undeploy {
                     files,
@@ -245,13 +160,7 @@ fn main() -> Result<()> {
                     filesets,
                 } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
-                    ops::undeploy::run(
-                        &config,
-                        files.as_deref(),
-                        remove_file,
-                        cli.dry_run,
-                        &fs,
-                    )?;
+                    ops::undeploy::run(&config, files.as_deref(), remove_file, cli.dry_run, &fs)?;
                 }
                 Command::Unimport {
                     files,
@@ -284,13 +193,7 @@ fn main() -> Result<()> {
                     filesets,
                 } => {
                     let files = resolve_file_selection(files, all, filesets, &config)?;
-                    ops::sync::run(
-                        &config,
-                        files.as_deref(),
-                        cli.dry_run,
-                        &fs,
-                        &prompter,
-                    )?;
+                    ops::sync::run(&config, files.as_deref(), cli.dry_run, &fs, &prompter)?;
                 }
                 Command::Status {
                     files,
@@ -318,4 +221,68 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::*;
+
+    fn test_config() -> Config {
+        let fs = setup_fs();
+        let toml = format!(
+            r#"
+dotfiles_dir = "{DOTFILES}"
+
+[[files]]
+src = "a.conf"
+
+[[files]]
+src = "hypr/hypr.conf"
+
+[filesets.desktop]
+patterns = ["hypr/*"]
+"#
+        );
+        write_and_load_config(&fs, &toml)
+    }
+
+    #[test]
+    fn all_returns_none() {
+        let config = test_config();
+        let result = resolve_file_selection(vec![], true, vec![], &config).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn explicit_files() {
+        let config = test_config();
+        let result =
+            resolve_file_selection(vec!["a.conf".to_string()], false, vec![], &config).unwrap();
+        assert_eq!(result, Some(vec!["a.conf".to_string()]));
+    }
+
+    #[test]
+    fn filesets_resolved() {
+        let config = test_config();
+        let result =
+            resolve_file_selection(vec![], false, vec!["desktop".to_string()], &config).unwrap();
+        assert_eq!(result, Some(vec!["hypr/*".to_string()]));
+    }
+
+    #[test]
+    fn no_source_errors() {
+        let config = test_config();
+        let result = resolve_file_selection(vec![], false, vec![], &config);
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("Specify"), "got: {msg}");
+    }
+
+    #[test]
+    fn multiple_sources_errors() {
+        let config = test_config();
+        let result = resolve_file_selection(vec!["a.conf".to_string()], true, vec![], &config);
+        let msg = format!("{:#}", result.unwrap_err());
+        assert!(msg.contains("Cannot combine"), "got: {msg}");
+    }
 }

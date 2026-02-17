@@ -3,7 +3,7 @@
 //! Pre-loaded with secret values via `add_secret()`. Calls to `resolve()`
 //! return the matching value or bail if no secret was registered.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::collections::HashMap;
 
 use super::SecretEngine;
@@ -23,12 +23,7 @@ impl FakeSecretEngine {
 
     /// Register a secret that `resolve()` will return.
     /// Returns the previous value if one was already registered for this key.
-    pub fn add_secret(
-        &mut self,
-        engine: &str,
-        reference: &str,
-        value: &str,
-    ) -> Option<String> {
+    pub fn add_secret(&mut self, engine: &str, reference: &str, value: &str) -> Option<String> {
         self.secrets.insert(
             (engine.to_string(), reference.to_string()),
             value.to_string(),

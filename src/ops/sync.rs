@@ -207,8 +207,7 @@ fn sync_file(
                 } else {
                     print_insert_hunk(&entry.src, hunk_num, total_hunks, new_index, staged_range);
 
-                    let selection =
-                        prompter.select("Action", &["Apply", "Skip"], 0)?;
+                    let selection = prompter.select("Action", &["Apply", "Skip"], 0)?;
 
                     if selection == 0 {
                         for line in staged_range {
@@ -493,6 +492,49 @@ fn print_delete_hunk(
 }
 
 #[allow(clippy::too_many_arguments)]
+fn print_replace_hunk(
+    src: &str,
+    hunk_num: usize,
+    total: usize,
+    old_index: usize,
+    old_len: usize,
+    source_range: &[&str],
+    staged: &[&str],
+    classification: &HunkClassification,
+) {
+    let label = if classification.is_safe {
+        "Current"
+    } else {
+        "Source"
+    };
+    println!(
+        "\n--- {}: hunk {}/{} (lines {}-{}) ---",
+        src,
+        hunk_num,
+        total,
+        old_index + 1,
+        old_index + old_len
+    );
+    println!("\n  {}:", label);
+    for line in source_range {
+        print!("    {}", line);
+        if !line.ends_with('\n') {
+            println!();
+        }
+    }
+    println!("\n  Staged:");
+    for line in staged {
+        print!("    {}", line);
+        if !line.ends_with('\n') {
+            println!();
+        }
+    }
+    if let Some(annotation) = classification.annotation {
+        println!("\n  {}", annotation);
+    }
+    println!();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -715,48 +757,4 @@ mod tests {
         assert!(!result.is_safe);
         assert!(result.annotation.unwrap().contains("independently edited"));
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn print_replace_hunk(
-    src: &str,
-    hunk_num: usize,
-    total: usize,
-    old_index: usize,
-    old_len: usize,
-    source_range: &[&str],
-    staged: &[&str],
-    classification: &HunkClassification,
-) {
-    let label = if classification.is_safe {
-        "Current"
-    } else {
-        "Source"
-    };
-    println!(
-        "\n--- {}: hunk {}/{} (lines {}-{}) ---",
-        src,
-        hunk_num,
-        total,
-        old_index + 1,
-        old_index + old_len
-    );
-    println!("\n  {}:", label);
-    for line in source_range {
-        print!("    {}", line);
-        if !line.ends_with('\n') {
-            println!();
-        }
-    }
-    println!("\n  Staged:");
-    for line in staged {
-        print!("    {}", line);
-        if !line.ends_with('\n') {
-            println!();
-        }
-    }
-    if let Some(annotation) = classification.annotation {
-        println!("\n  {}", annotation);
-    }
-    println!();
 }

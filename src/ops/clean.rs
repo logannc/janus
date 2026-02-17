@@ -276,12 +276,8 @@ mod tests {
             &make_config_toml(&[("a.conf", None), ("b.conf", None)]),
         );
         run(&config, true, false, false, &fs).unwrap();
-        assert!(!fs.exists(Path::new(&format!(
-            "{DOTFILES}/.generated/a.conf"
-        ))));
-        assert!(!fs.exists(Path::new(&format!(
-            "{DOTFILES}/.generated/b.conf"
-        ))));
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/.generated/a.conf"))));
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/.generated/b.conf"))));
     }
 
     #[test]
@@ -298,15 +294,10 @@ mod tests {
     fn clean_generated_dry_run() {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "a");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         run(&config, true, false, true, &fs).unwrap();
         // File should still exist
-        assert!(fs.exists(Path::new(&format!(
-            "{DOTFILES}/.generated/a.conf"
-        ))));
+        assert!(fs.exists(Path::new(&format!("{DOTFILES}/.generated/a.conf"))));
     }
 
     #[test]
@@ -314,17 +305,10 @@ mod tests {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/.generated/orphan.conf"), "orphan");
         fs.add_file(format!("{DOTFILES}/.generated/kept.conf"), "kept");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("kept.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("kept.conf", None)]));
         run(&config, false, true, false, &fs).unwrap();
-        assert!(!fs.exists(Path::new(&format!(
-            "{DOTFILES}/.generated/orphan.conf"
-        ))));
-        assert!(fs.exists(Path::new(&format!(
-            "{DOTFILES}/.generated/kept.conf"
-        ))));
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/.generated/orphan.conf"))));
+        assert!(fs.exists(Path::new(&format!("{DOTFILES}/.generated/kept.conf"))));
     }
 
     #[test]
@@ -332,14 +316,9 @@ mod tests {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "a");
         fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "a");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         run(&config, false, true, false, &fs).unwrap();
-        assert!(fs.exists(Path::new(&format!(
-            "{DOTFILES}/.generated/a.conf"
-        ))));
+        assert!(fs.exists(Path::new(&format!("{DOTFILES}/.generated/a.conf"))));
         assert!(fs.exists(Path::new(&format!("{DOTFILES}/.staged/a.conf"))));
     }
 
@@ -352,9 +331,8 @@ mod tests {
         // Create a symlink at target pointing to staged
         fs.add_symlink(&target, &staged_path);
         // Mark as deployed in state
-        let state_toml = format!(
-            "[[deployed]]\nsrc = \"orphan.conf\"\ntarget = \"~/.config/orphan.conf\"\n"
-        );
+        let state_toml =
+            "[[deployed]]\nsrc = \"orphan.conf\"\ntarget = \"~/.config/orphan.conf\"\n";
         fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
         let config = write_and_load_config(&fs, &make_config_toml(&[]));
         run(&config, false, true, false, &fs).unwrap();
@@ -391,8 +369,6 @@ mod tests {
         // Not deployed
         let config = write_and_load_config(&fs, &make_config_toml(&[]));
         run(&config, false, true, false, &fs).unwrap();
-        assert!(!fs.exists(Path::new(&format!(
-            "{DOTFILES}/.staged/orphan.conf"
-        ))));
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/.staged/orphan.conf"))));
     }
 }

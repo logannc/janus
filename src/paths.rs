@@ -59,7 +59,10 @@ mod tests {
     fn expand_tilde_no_tilde() {
         let fs = FakeFs::new("/home/test");
         assert_eq!(expand_tilde("/etc/foo", &fs), PathBuf::from("/etc/foo"));
-        assert_eq!(expand_tilde("relative/path", &fs), PathBuf::from("relative/path"));
+        assert_eq!(
+            expand_tilde("relative/path", &fs),
+            PathBuf::from("relative/path")
+        );
     }
 
     #[test]

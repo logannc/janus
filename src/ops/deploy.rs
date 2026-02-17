@@ -102,12 +102,7 @@ pub fn run(
 /// Creates a temporary symlink (`.janus.tmp`) then renames it over the target
 /// so there's never a moment where the file is missing.
 #[cfg(feature = "atomic-deploy")]
-fn deploy_symlink(
-    staged_path: &Path,
-    target_path: &Path,
-    force: bool,
-    fs: &impl Fs,
-) -> Result<()> {
+fn deploy_symlink(staged_path: &Path, target_path: &Path, force: bool, fs: &impl Fs) -> Result<()> {
     let exists = fs.exists(target_path) || fs.is_symlink(target_path);
 
     // Backup if needed (copy, so the original stays in place until the atomic swap)
@@ -152,12 +147,7 @@ fn deploy_symlink(
 ///
 /// Non-atomic fallback: removes the existing file first, then creates the symlink.
 #[cfg(not(feature = "atomic-deploy"))]
-fn deploy_symlink(
-    staged_path: &Path,
-    target_path: &Path,
-    force: bool,
-    fs: &impl Fs,
-) -> Result<()> {
+fn deploy_symlink(staged_path: &Path, target_path: &Path, force: bool, fs: &impl Fs) -> Result<()> {
     if fs.exists(target_path) || fs.is_symlink(target_path) {
         if is_janus_symlink(target_path, staged_path, fs) {
             fs.remove_file(target_path).with_context(|| {
@@ -285,7 +275,10 @@ mod tests {
         );
         let result = run(&config, None, false, false, &fs);
         let msg = format!("{:#}", result.unwrap_err());
-        assert!(msg.contains("Staged file not found") || msg.contains("missing.conf"), "got: {msg}");
+        assert!(
+            msg.contains("Staged file not found") || msg.contains("missing.conf"),
+            "got: {msg}"
+        );
     }
 
     #[test]
@@ -345,9 +338,7 @@ mod tests {
         );
         run(&config, None, false, false, &fs).unwrap();
         // Backup should exist at nested path
-        assert!(fs.exists(Path::new(
-            "/home/test/.config/deep/nested.conf.janus.bak"
-        )));
+        assert!(fs.exists(Path::new("/home/test/.config/deep/nested.conf.janus.bak")));
         assert!(fs.is_symlink(Path::new("/home/test/.config/deep/nested.conf")));
     }
 

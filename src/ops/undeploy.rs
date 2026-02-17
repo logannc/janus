@@ -204,16 +204,13 @@ mod tests {
     use super::*;
     use crate::test_helpers::*;
 
-    fn deploy_and_undeploy_setup(
-        fs: &crate::platform::FakeFs,
-    ) -> Config {
+    fn deploy_and_undeploy_setup(fs: &crate::platform::FakeFs) -> Config {
         let staged = format!("{DOTFILES}/.staged/a.conf");
         let target = "/home/test/.config/a.conf";
         fs.add_file(&staged, "staged content");
         fs.add_symlink(target, &staged);
         // Mark as deployed in state
-        let state_toml =
-            "[[deployed]]\nsrc = \"a.conf\"\ntarget = \"~/.config/a.conf\"\n";
+        let state_toml = "[[deployed]]\nsrc = \"a.conf\"\ntarget = \"~/.config/a.conf\"\n";
         fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
         write_and_load_config(
             fs,
@@ -282,8 +279,7 @@ mod tests {
         // Create a symlink that points somewhere else
         fs.add_symlink("/home/test/.config/a.conf", "/some/other/file");
         // Mark as deployed
-        let state_toml =
-            "[[deployed]]\nsrc = \"a.conf\"\ntarget = \"~/.config/a.conf\"\n";
+        let state_toml = "[[deployed]]\nsrc = \"a.conf\"\ntarget = \"~/.config/a.conf\"\n";
         fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
         let config = write_and_load_config(
             &fs,

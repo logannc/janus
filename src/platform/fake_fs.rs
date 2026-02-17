@@ -7,7 +7,7 @@
 //! Non-trait setup methods (`add_file`, `add_dir`, `add_symlink`) auto-create
 //! parent directories for convenience in test setup.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -99,10 +99,14 @@ impl FakeFs {
 
     /// Add a directory entry. Auto-creates parent directories.
     /// Returns the previous entry if one existed (no-op if already a dir).
+    #[allow(clippy::map_entry)]
     pub fn add_dir(&self, path: impl Into<PathBuf>) -> Option<FakeEntry> {
         let path = path.into();
         self.ensure_parents(&path);
         let mut entries = self.entries.borrow_mut();
+        // Entry API is cleaner but then it wouldn't return None when we insert
+        // and we can't _just_ call insert because we don't want to replace if it already exists
+        // (This doesn't really matter right now, but matching semantics will make it easier if we ever augment FakeEntry::Dir)
         if entries.contains_key(&path) {
             entries.get(&path).cloned()
         } else {
@@ -324,10 +328,7 @@ impl Fs for FakeFs {
 
     fn is_dir(&self, path: &Path) -> bool {
         let resolved = self.resolve_path(path);
-        matches!(
-            self.entries.borrow().get(&resolved),
-            Some(FakeEntry::Dir)
-        )
+        matches!(self.entries.borrow().get(&resolved), Some(FakeEntry::Dir))
     }
 
     fn walk_dir(&self, path: &Path, opts: &WalkOptions) -> Result<Vec<DirEntry>> {
@@ -343,10 +344,10 @@ impl Fs for FakeFs {
                 if depth < opts.min_depth {
                     return None;
                 }
-                if let Some(max) = opts.max_depth {
-                    if depth > max {
-                        return None;
-                    }
+                if let Some(max) = opts.max_depth
+                    && depth > max
+                {
+                    return None;
                 }
 
                 let (is_file, is_dir, is_symlink) = match entry {
@@ -435,10 +436,7 @@ mod tests {
         assert!(fs.is_symlink(Path::new("/link")));
         assert!(!fs.is_symlink(Path::new("/real/file.txt")));
         assert!(fs.exists(Path::new("/link")));
-        assert_eq!(
-            fs.read_to_string(Path::new("/link")).unwrap(),
-            "content"
-        );
+        assert_eq!(fs.read_to_string(Path::new("/link")).unwrap(), "content");
         assert_eq!(
             fs.read_link(Path::new("/link")).unwrap(),
             PathBuf::from("/real/file.txt")
@@ -460,7 +458,8 @@ mod tests {
         fs.add_file_with_mode("/tmp/script.sh", "#!/bin/bash", 0o755);
 
         assert_eq!(fs.file_mode(Path::new("/tmp/script.sh")).unwrap(), 0o755);
-        fs.set_file_mode(Path::new("/tmp/script.sh"), 0o644).unwrap();
+        fs.set_file_mode(Path::new("/tmp/script.sh"), 0o644)
+            .unwrap();
         assert_eq!(fs.file_mode(Path::new("/tmp/script.sh")).unwrap(), 0o644);
     }
 

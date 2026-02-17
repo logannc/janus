@@ -183,8 +183,7 @@ mod tests {
         // Deploy it
         let staged = format!("{DOTFILES}/.staged/a.conf");
         fs.add_symlink("/home/test/.config/a.conf", &staged);
-        let state_toml =
-            "[[deployed]]\nsrc = \"a.conf\"\ntarget = \"~/.config/a.conf\"\n";
+        let state_toml = "[[deployed]]\nsrc = \"a.conf\"\ntarget = \"~/.config/a.conf\"\n";
         fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
         write_and_load_config(
             fs,
@@ -200,9 +199,7 @@ mod tests {
         run(&config, Path::new(CONFIG_PATH), &files, false, false, &fs).unwrap();
         // Source, generated, staged should be removed
         assert!(!fs.exists(Path::new(&format!("{DOTFILES}/a.conf"))));
-        assert!(!fs.exists(Path::new(&format!(
-            "{DOTFILES}/.generated/a.conf"
-        ))));
+        assert!(!fs.exists(Path::new(&format!("{DOTFILES}/.generated/a.conf"))));
         assert!(!fs.exists(Path::new(&format!("{DOTFILES}/.staged/a.conf"))));
         // Target should have a copy (not removed by default)
         assert!(fs.is_file(Path::new("/home/test/.config/a.conf")));
@@ -235,7 +232,10 @@ mod tests {
         let config = write_and_load_config(&fs, &make_config_toml(&[]));
         let result = run(&config, Path::new(CONFIG_PATH), &[], false, false, &fs);
         let msg = format!("{:#}", result.unwrap_err());
-        assert!(msg.contains("No files") || msg.contains("Specify"), "got: {msg}");
+        assert!(
+            msg.contains("No files") || msg.contains("Specify"),
+            "got: {msg}"
+        );
     }
 
     #[test]
@@ -261,10 +261,7 @@ mod tests {
         fs.add_file(format!("{DOTFILES}/.janus_state.toml"), state_toml);
         let config = write_and_load_config(
             &fs,
-            &make_config_toml(&[(
-                "deep/nested/a.conf",
-                Some("~/.config/deep/nested/a.conf"),
-            )]),
+            &make_config_toml(&[("deep/nested/a.conf", Some("~/.config/deep/nested/a.conf"))]),
         );
         let files = vec!["deep/nested/a.conf".to_string()];
         run(&config, Path::new(CONFIG_PATH), &files, false, false, &fs).unwrap();
@@ -281,7 +278,10 @@ mod tests {
         run(&config, Path::new(CONFIG_PATH), &files, false, false, &fs).unwrap();
         // Config should no longer contain the entry
         let content = fs.read_to_string(Path::new(CONFIG_PATH)).unwrap();
-        assert!(!content.contains("a.conf"), "config still contains a.conf: {content}");
+        assert!(
+            !content.contains("a.conf"),
+            "config still contains a.conf: {content}"
+        );
     }
 
     #[test]

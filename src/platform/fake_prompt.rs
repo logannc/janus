@@ -4,7 +4,7 @@
 //! response from the front. Errors if the queue is exhausted or a response
 //! index is out of range for the given items.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 
@@ -62,18 +62,9 @@ mod tests {
     #[test]
     fn test_returns_responses_in_order() {
         let prompter = FakePrompter::new(vec![0, 2, 1]);
-        assert_eq!(
-            prompter.select("q1", &["a", "b", "c"], 0).unwrap(),
-            0
-        );
-        assert_eq!(
-            prompter.select("q2", &["a", "b", "c"], 0).unwrap(),
-            2
-        );
-        assert_eq!(
-            prompter.select("q3", &["a", "b", "c"], 0).unwrap(),
-            1
-        );
+        assert_eq!(prompter.select("q1", &["a", "b", "c"], 0).unwrap(), 0);
+        assert_eq!(prompter.select("q2", &["a", "b", "c"], 0).unwrap(), 2);
+        assert_eq!(prompter.select("q3", &["a", "b", "c"], 0).unwrap(), 1);
     }
 
     #[test]

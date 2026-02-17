@@ -126,10 +126,7 @@ pub fn run(config: &Config, files: Option<&[String]>, fs: &impl Fs) -> Result<()
                 );
             }
             DiffKind::MissingStaged => {
-                info!(
-                    "{}: no staged file (run `janus stage` first)",
-                    result.src
-                );
+                info!("{}: no staged file (run `janus stage` first)", result.src);
             }
             DiffKind::Identical => {}
             DiffKind::Changed(diff_text) => {
@@ -169,10 +166,7 @@ mod tests {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "same");
         fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "same");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         let results = compute(&config, None, &fs).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].src, "a.conf");
@@ -184,16 +178,19 @@ mod tests {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "old\n");
         fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "new\n");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         let results = compute(&config, None, &fs).unwrap();
         assert_eq!(results.len(), 1);
         match &results[0].kind {
             DiffKind::Changed(text) => {
-                assert!(text.contains("-old"), "diff should show removed line, got: {text}");
-                assert!(text.contains("+new"), "diff should show added line, got: {text}");
+                assert!(
+                    text.contains("-old"),
+                    "diff should show removed line, got: {text}"
+                );
+                assert!(
+                    text.contains("+new"),
+                    "diff should show added line, got: {text}"
+                );
             }
             other => panic!("expected Changed, got: {other:?}"),
         }
@@ -203,10 +200,7 @@ mod tests {
     fn missing_generated_detected() {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/.staged/a.conf"), "staged");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         let results = compute(&config, None, &fs).unwrap();
         assert_eq!(results.len(), 1);
         assert!(matches!(results[0].kind, DiffKind::MissingGenerated));
@@ -216,10 +210,7 @@ mod tests {
     fn missing_staged_detected() {
         let fs = setup_fs();
         fs.add_file(format!("{DOTFILES}/.generated/a.conf"), "generated");
-        let config = write_and_load_config(
-            &fs,
-            &make_config_toml(&[("a.conf", None)]),
-        );
+        let config = write_and_load_config(&fs, &make_config_toml(&[("a.conf", None)]));
         let results = compute(&config, None, &fs).unwrap();
         assert_eq!(results.len(), 1);
         assert!(matches!(results[0].kind, DiffKind::MissingStaged));

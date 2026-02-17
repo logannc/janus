@@ -53,9 +53,7 @@ mod tests {
         let engine = FakeSecretEngine::new();
         run(&config, None, false, false, &fs, &engine).unwrap();
         // Should have generated, staged, and deployed
-        assert!(fs.exists(Path::new(&format!(
-            "{DOTFILES}/.generated/a.conf"
-        ))));
+        assert!(fs.exists(Path::new(&format!("{DOTFILES}/.generated/a.conf"))));
         assert!(fs.exists(Path::new(&format!("{DOTFILES}/.staged/a.conf"))));
         assert!(fs.is_symlink(Path::new("/home/test/.config/a.conf")));
         let state = State::load(Path::new(DOTFILES), &fs).unwrap();
@@ -124,7 +122,10 @@ target = "~/.config/app.conf"
         let staged_content = fs
             .read_to_string(Path::new(&format!("{DOTFILES}/.staged/app.conf")))
             .unwrap();
-        assert_eq!(staged_content, "name=myapp\nport=8080\npassword=s3cret123\n");
+        assert_eq!(
+            staged_content,
+            "name=myapp\nport=8080\npassword=s3cret123\n"
+        );
 
         // Verify state
         let state = State::load(Path::new(DOTFILES), &fs).unwrap();
