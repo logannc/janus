@@ -27,6 +27,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub dry_run: bool,
 
+    /// Lock timeout in seconds (0 = fail immediately if locked)
+    #[arg(long, global = true, default_value = "5")]
+    pub lock_timeout: u64,
+
     #[command(subcommand)]
     pub command: Command,
 }

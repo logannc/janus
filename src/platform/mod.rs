@@ -8,15 +8,19 @@
 //! [`RealPrompter`]). Tests substitute fakes via generics — no trait objects needed.
 
 mod real_fs;
+mod real_locker;
 mod real_prompt;
 mod real_secret;
 
 pub use real_fs::RealFs;
+pub use real_locker::RealLocker;
 pub use real_prompt::RealPrompter;
 pub use real_secret::RealSecretEngine;
 
 #[cfg(test)]
 mod fake_fs;
+#[cfg(test)]
+mod fake_locker;
 #[cfg(test)]
 mod fake_prompt;
 #[cfg(test)]
@@ -28,6 +32,9 @@ pub(crate) use self::fake_fs::FakeEntry;
 #[cfg(test)]
 #[allow(unused_imports)]
 pub use self::fake_fs::FakeFs;
+#[cfg(test)]
+#[allow(unused_imports)]
+pub use self::fake_locker::FakeLocker;
 #[cfg(test)]
 #[allow(unused_imports)]
 pub use self::fake_prompt::FakePrompter;
@@ -179,4 +186,27 @@ pub trait Prompter {
     /// `prompt` is the question text, `items` are the choices, and `default`
     /// is the pre-selected index.
     fn select(&self, prompt: &str, items: &[&str], default: usize) -> Result<usize>;
+}
+
+// ---------------------------------------------------------------------------
+// Process lock
+// ---------------------------------------------------------------------------
+
+/// Abstraction over process-level file locking.
+///
+/// In production, delegates to `fslock`. In tests, uses in-memory state.
+pub trait Locker {
+    /// Attempt to acquire the lock without blocking.
+    /// Returns `true` if the lock was acquired, `false` if held by another process.
+    fn try_lock(&mut self) -> Result<bool>;
+
+    /// Release the lock.
+    #[allow(dead_code)]
+    fn unlock(&mut self) -> Result<()>;
+
+    /// Read the PID of the process currently holding the lock, if available.
+    fn read_lock_owner(&self) -> Result<Option<u32>>;
+
+    /// Path to the lock file.
+    fn lock_path(&self) -> &Path;
 }

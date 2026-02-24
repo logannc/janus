@@ -6,6 +6,7 @@
 
 mod cli;
 mod config;
+mod lock;
 mod ops;
 mod paths;
 mod platform;
@@ -15,13 +16,15 @@ mod state;
 #[cfg(test)]
 mod test_helpers;
 
+use std::time::Duration;
+
 use anyhow::{Result, bail};
 use clap::{CommandFactory, Parser};
 use tracing_subscriber::EnvFilter;
 
 use cli::{Cli, Command};
 use config::Config;
-use platform::{RealFs, RealPrompter, RealSecretEngine};
+use platform::{RealFs, RealLocker, RealPrompter, RealSecretEngine};
 
 /// Resolve file selection from explicit files, `--all`, or `--filesets`.
 ///
@@ -101,6 +104,14 @@ fn main() -> Result<()> {
         }
         command => {
             let config_path = cli.config.unwrap_or_else(|| Config::default_path(&fs));
+            let config = Config::load(&config_path, &fs)?;
+
+            // Acquire process lock
+            let lock_path = config.dotfiles_dir(&fs).join(".janus.lock");
+            let mut locker = RealLocker::new(lock_path)?;
+            lock::acquire_lock(&mut locker, Duration::from_secs(cli.lock_timeout))?;
+
+            // Reload config under lock for consistency
             let config = Config::load(&config_path, &fs)?;
 
             match command {
