@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use std::time::{Duration, Instant};
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 
 use crate::platform::Locker;
 
@@ -11,11 +11,16 @@ use crate::platform::Locker;
 pub fn acquire_lock(locker: &mut impl Locker, timeout: Duration) -> Result<()> {
     let start = Instant::now();
     let path_display = locker.lock_path().display().to_string();
+    let mut first = true;
 
     loop {
         if locker.try_lock()? {
             debug!("Acquired lock at {path_display}");
             return Ok(());
+        }
+        if first {
+            info!("Failed to acquire lockfile. Waiting...");
+            first = false;
         }
 
         let elapsed = start.elapsed();
